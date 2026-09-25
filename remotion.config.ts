@@ -6,6 +6,8 @@ import { Config } from "@remotion/cli/config";
 Config.setPublicDir("./assets");
 Config.setVideoImageFormat("jpeg");
 Config.setOverwriteOutput(true);
+// software WebGL (SwiftShader) can take a while on the first frame of a 3D shot
+Config.setDelayRenderTimeoutInMilliseconds(180000);
 
 // Remotion's esbuild loader can't read tsconfig.json with TypeScript 7, so it
 // would fall back to classic JSX (React.createElement). Force the automatic

@@ -41,11 +41,13 @@ export const WordPop: React.FC<Props> = ({
         const pop = spring({
           frame: frame - startFrame - i * framesPerWord,
           fps,
-          config: { damping: 11, stiffness: 220, mass: 0.6 },
+          config: { damping: 18, stiffness: 190, mass: 0.6, overshootClamping: true },
         });
-        const scale = interpolate(pop, [0, 1], [0.4, 1]);
-        const y = interpolate(pop, [0, 1], [24, 0]);
-        const opacity = interpolate(pop, [0, 0.4], [0, 1], { extrapolateRight: "clamp" });
+        // never scales past 1, so neighbouring words can't collide
+        const scale = interpolate(pop, [0, 1], [0.8, 1]);
+        const y = interpolate(pop, [0, 1], [28, 0]);
+        const blur = interpolate(pop, [0, 0.7], [8, 0], { extrapolateRight: "clamp" });
+        const opacity = interpolate(pop, [0, 0.45], [0, 1], { extrapolateRight: "clamp" });
 
         return (
           <span key={i}>
@@ -53,7 +55,9 @@ export const WordPop: React.FC<Props> = ({
               style={{
                 display: "inline-block",
                 opacity,
+                transformOrigin: "50% 85%",
                 transform: `translateY(${y}px) scale(${scale})`,
+                filter: blur > 0.2 ? `blur(${blur}px)` : undefined,
               }}
             >
               {word}

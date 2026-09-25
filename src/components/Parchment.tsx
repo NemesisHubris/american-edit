@@ -22,7 +22,7 @@ export const PaperOverlay: React.FC<{
   vignette?: number;
   grain?: number;
   flicker?: number;
-}> = ({ seed = 0, texture = 1, vignette = 0.55, grain = 0.13, flicker = 0.035 }) => {
+}> = ({ seed = 0, texture = 0.55, vignette = 0.5, grain = 0.12, flicker = 0.035 }) => {
   const f = useCurrentFrame();
   const ox = Math.round(hash(seed, 1) * 240 - 120);
   const oy = Math.round(hash(seed, 2) * 140 - 70);

@@ -5,6 +5,7 @@ import { Test1776 } from "./Test1776";
 import { TexGrain, TexPaper } from "./dev/Textures";
 import { ContactSheet } from "./dev/ContactSheet";
 import { Lab } from "./dev/Lab";
+import { GLTest } from "./dev/GLTest";
 import { SCENE_DEFS } from "./scenes";
 import { registerSceneLookup, SceneById } from "./scenes/SceneView";
 import { sceneInfo, SCENES, TOTAL_FRAMES } from "./timeline";
@@ -50,6 +51,7 @@ export const RemotionRoot: React.FC = () => {
           height={HEIGHT}
         />
         <Composition id="Lab" component={Lab} durationInFrames={440} fps={FPS} width={WIDTH} height={HEIGHT} />
+        <Composition id="GLTest" component={GLTest} defaultProps={{ color: false }} durationInFrames={90} fps={FPS} width={WIDTH} height={HEIGHT} />
         <Composition
           id="Test1776"
           component={Test1776}
