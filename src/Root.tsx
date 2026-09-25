@@ -6,8 +6,10 @@ import { TexGrain, TexPaper } from "./dev/Textures";
 import { ContactSheet } from "./dev/ContactSheet";
 import { Lab } from "./dev/Lab";
 import { SCENE_DEFS } from "./scenes";
-import { SceneView } from "./scenes/SceneView";
+import { registerSceneLookup, SceneById } from "./scenes/SceneView";
 import { sceneInfo, SCENES, TOTAL_FRAMES } from "./timeline";
+
+registerSceneLookup((id) => SCENE_DEFS.find((d) => d.id === id));
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -27,8 +29,8 @@ export const RemotionRoot: React.FC = () => {
             <Composition
               key={def.id}
               id={`S${String(n).padStart(2, "0")}-${def.id}`}
-              component={SceneView}
-              defaultProps={{ def }}
+              component={SceneById}
+              defaultProps={{ id: def.id }}
               durationInFrames={sceneInfo(def.id).durationInFrames}
               fps={FPS}
               width={WIDTH}
@@ -47,7 +49,7 @@ export const RemotionRoot: React.FC = () => {
           width={WIDTH}
           height={HEIGHT}
         />
-        <Composition id="Lab" component={Lab} durationInFrames={240} fps={FPS} width={WIDTH} height={HEIGHT} />
+        <Composition id="Lab" component={Lab} durationInFrames={440} fps={FPS} width={WIDTH} height={HEIGHT} />
         <Composition
           id="Test1776"
           component={Test1776}

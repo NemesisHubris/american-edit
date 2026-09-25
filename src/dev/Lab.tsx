@@ -10,6 +10,7 @@ import { Birds, Clouds, EngravedSky, Moon, Stars, Sun } from "../components/Sky"
 import { engrave, ellipseP, polyD, rectP, tones } from "../lib/engrave";
 import { memo } from "../lib/math";
 import { SceneView } from "../scenes/SceneView";
+import { MapBase, Ship } from "../components/MapScene";
 import type { SceneDef } from "../scenes/types";
 
 const column = (): InkItem[] => {
@@ -95,12 +96,23 @@ const ShotC: React.FC = () => (
   </Camera>
 );
 
+const MapTest: React.FC = () => (
+  <Camera keys={[{ f: 0, z: 1 }]}>
+    <Layer depth={1}>
+      <MapBase cues={{ border: 0, sea: 0, land: 10, original: 40, louisiana: 60, westStart: 100, westDur: 60, rivers: 50, labels: 70, compass: 5 }} />
+      <Ship x={200} y={500} />
+      <Ship x={1700} y={300} seed={3} dir={-1} />
+    </Layer>
+  </Camera>
+);
+
 export const LAB_DEF: SceneDef = {
   id: "coldOpen",
   shots: [
     { from: 0, dur: 80, el: <ShotA /> },
     { from: 80, dur: 80, el: <ShotB />, enter: "ink", palette: "color" },
     { from: 160, dur: 80, el: <ShotC />, enter: "burn" },
+    { from: 240, dur: 200, el: <MapTest />, enter: "ink" },
   ],
 };
 

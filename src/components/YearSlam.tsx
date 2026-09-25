@@ -54,11 +54,14 @@ export const YearSlam: React.FC<Props> = ({
     extrapolateRight: "clamp",
   });
 
-  const flash = interpolate(frame, [impact, impact + FLASH_FRAMES], [1, 0], {
-    easing: Easing.out(Easing.quad),
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-  });
+  const flash =
+    frame < impact
+      ? 0
+      : interpolate(frame, [impact, impact + FLASH_FRAMES], [1, 0], {
+          easing: Easing.out(Easing.quad),
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        });
 
   const shakeAmount = interpolate(frame, [impact, impact + SHAKE_FRAMES], [SHAKE_PX, 0], {
     extrapolateLeft: "clamp",

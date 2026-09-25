@@ -23,12 +23,12 @@ Living-engravings American history edit — 1920x1080, 30fps, 1:45 (3150 frames)
 - [x] Effects (flashes, beat shake + zoom punch, light leaks)
 - [x] Sky kit (engraved sky, clouds, sun + rays, birds, moon, stars)
 - [x] YearSlam (extended: Cinzel, splatter, exit), WordPop + Quote (gradient, attribution)
-- [ ] MapScene
+- [x] MapScene (us-atlas lower 48, coastlines w/o land borders, Louisiana Purchase region, rivers, L&C + Oregon trails, compass, cartouche, ships)
 
 ## Scenes
 | # | Scene | Status | Notes |
 |---|-------|--------|-------|
-| 1 | Cold open | todo | |
+| 1 | Cold open | done | Boot in lunar dust (low-gravity grains), flag on windswept ridge, Saturn V F-1 ignition; flash cuts on beats; black card with 13-star ring, embers, shockwave; YearSlam 1776 impact on the 2.0s beat. Motion check PASS (min 0.99 on the dark card). |
 | 2 | The Founding | todo | |
 | 3 | Manifest Destiny | todo | |
 | 4 | A Nation Tested | todo | |
