@@ -3,9 +3,10 @@ import { AbsoluteFill, Freeze } from "remotion";
 import { SceneView } from "../scenes/SceneView";
 import { SCENE_DEFS } from "../scenes";
 import { LAB_DEF } from "./Lab";
+import { HistoryEdit } from "../HistoryEdit";
 
 export const ContactSheet: React.FC<{ scene: string; frames: number[] }> = ({ scene, frames }) => {
-  const def = scene === "lab" ? LAB_DEF : SCENE_DEFS.find((d) => d.id === scene)!;
+  const def = scene === "lab" ? LAB_DEF : SCENE_DEFS.find((d) => d.id === scene);
   const cols = frames.length <= 4 ? 2 : 3;
   const rows = Math.ceil(frames.length / cols);
   const s = Math.min(1 / cols, 1 / rows);
@@ -28,9 +29,7 @@ export const ContactSheet: React.FC<{ scene: string; frames: number[] }> = ({ sc
             overflow: "hidden",
           }}
         >
-          <Freeze frame={fr}>
-            <SceneView def={def} />
-          </Freeze>
+          <Freeze frame={fr}>{scene === "full" || !def ? <HistoryEdit /> : <SceneView def={def} />}</Freeze>
           <div style={{ position: "absolute", left: 16, top: 12, color: "#0f0", fontSize: 44, fontFamily: "monospace", textShadow: "0 0 6px #000" }}>
             {fr}
           </div>

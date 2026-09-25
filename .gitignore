@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 .env
 
-# Renders stay local, except the test clip
+# Renders stay local, except the test clip and the 720p preview
 out/*
 !out/test.mp4
+!out/preview.mp4
