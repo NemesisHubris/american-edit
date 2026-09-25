@@ -226,8 +226,8 @@ const flagSetup = (g: GL) => {
   const moon = lunarSet(g, { sun: [0.55, 0.3, 0.6], earth: [-40, 70, -260], earthR: 14, flatAt: [0, 0, 12], seed: "base", shadows: 16 });
   const y0 = moon.hf(0, 0);
   const lm = makeLM(g);
-  lm.group.position.set(4.2, moon.hf(4.2, -13), -13);
-  lm.group.rotation.y = -0.4;
+  lm.group.position.set(-11, moon.hf(-11, -9), -9);
+  lm.group.rotation.y = 0.6;
   g.scene.add(lm.group);
   const flag = makeFlag(g, { w: 1.5, h: 0.9, stars: 50, wind: 0.04, speed: 0.4, droop: 0.02, rod: true, wrinkle: 1 });
   flag.mesh.position.set(-1.6, y0 + 2.05, -0.6);
@@ -241,6 +241,15 @@ const flagSetup = (g: GL) => {
   rod.rotation.z = Math.PI / 2;
   rod.position.set(0.55, 0, 0);
   flag.mesh.add(rod);
+  const prints = new THREE.InstancedMesh(new THREE.BoxGeometry(0.14, 0.02, 0.32), g.ink({ color: "#6e6a62", hatch: 0.8, instanced: true, edges: 0 }), 40);
+  for (let i = 0; i < 40; i++) {
+    const t2 = i / 40;
+    const px = 1.3 - 9 * t2 + Math.sin(i * 1.3) * 0.25;
+    const pz = 0.8 - 12 * t2 + (i % 2 ? 0.18 : -0.18);
+    prints.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(px, moon.hf(px, pz) + 0.005, pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.6, 0)), new THREE.Vector3(1, 1, 1)));
+  }
+  prints.frustumCulled = false;
+  g.scene.add(prints);
   const astro = makeFigure(g, "apollo");
   astro.root.position.set(1.3, y0, 0.8);
   astro.root.rotation.y = 0.25;
@@ -263,8 +272,8 @@ const flagSetup = (g: GL) => {
     driveCamera(
       g,
       [
-        { f: 0, pos: [3.2, y0 + 1.3, 5.6], look: [0.8, y0 + 1.25, 0], fov: 42 },
-        { f: 45, pos: [4.1, y0 + 1.4, 4.9], look: [0.8, y0 + 1.3, -0.2], fov: 40 },
+        { f: 0, pos: [3.6, y0 + 1.1, 6.4], look: [-0.8, y0 + 1.6, -2], fov: 46 },
+        { f: 45, pos: [4.4, y0 + 1.2, 5.6], look: [-0.8, y0 + 1.7, -2.2], fov: 44 },
       ],
       f,
       0.006,

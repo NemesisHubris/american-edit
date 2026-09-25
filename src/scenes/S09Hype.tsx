@@ -147,14 +147,14 @@ const circuitSetup = (macro: boolean) => (g: GL) => {
   sh.uGround.value.set(0.05, 0.08, 0.06);
   g.camera.far = 300;
   g.camera.near = 0.05;
-  const sky = makeSky(sh, { top: "#05070a", horizon: "#0a1614", bottom: "#05070a", glow: 0, rays: 0, lines: 0, paper: 0 });
+  const sky = makeSky(sh, { top: "#061410", horizon: "#0b2a20", bottom: "#0b2a20", glow: 0, rays: 0, lines: 0.3, lineSpacing: 4, paper: 0 });
   g.scene.add(sky.mesh);
-  g.setPost({ fog: [20, 60, 0.9], fogCol: "#061210" });
+  g.setPost({ fog: [12, 45, 0.85], fogCol: "#0b2a20" });
   const pcb = makePCB(g, 40);
   g.scene.add(pcb.group);
   return (f: number) => {
-    if (macro) driveCamera(g, [{ f: 0, pos: [-6, 1.2, 4], look: [2, 0, -2], fov: 50 }, { f: 15, pos: [-3.5, 0.9, 2.6], look: [4, 0, -3], fov: 50 }], f, 0.005, 4);
-    else driveCamera(g, [{ f: 0, pos: [-12, 3.5, 10], look: [0, 0, -4], fov: 55 }, { f: 15, pos: [-4, 2.4, 6], look: [8, 0, -6], fov: 55 }], f, 0.005, 5);
+    if (macro) driveCamera(g, [{ f: 0, pos: [-5, 2.4, 4], look: [1, -2.5, -2], fov: 50 }, { f: 15, pos: [-3, 2.0, 2.6], look: [3, -2.5, -3], fov: 50 }], f, 0.005, 4);
+    else driveCamera(g, [{ f: 0, pos: [-9, 9, 9], look: [0, -4, -3], fov: 55 }, { f: 15, pos: [-3, 8, 6], look: [6, -4, -5], fov: 55 }], f, 0.005, 5);
     pcb.board.uniforms.uPulse.value = T(f) * 1.6 + (macro ? 0.4 : 0);
   };
 };

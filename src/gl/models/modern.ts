@@ -241,7 +241,23 @@ export const makePCB = (g: GL, size = 40) => {
   group.add(mesh);
   // chips with pins, capacitors, resistors
   const { chips, W } = pcbLayout();
-  const chipM = g.ink({ color: "#1c1c1f", mode: "world", dir: [1, 0, 0], scale: 14, spec: 0.8, gloss: 30, rim: 0.4 });
+  const chipM = g.ink({
+    color: "#1c1c1f",
+    mode: "screen",
+    angle: 30,
+    scale: 3.4,
+    spec: 0.8,
+    gloss: 30,
+    rim: 0.5,
+    frag: /* glsl */ `
+      // silk-screened part numbers + pin-1 dot on chip tops
+      float top = step(0.8, N.y);
+      vec2 q = vWorld.xz * vec2(4.0, 10.0);
+      float txt = step(0.55, tvn(floor(q) * 0.37)) * step(0.2, fract(q.x)) * step(fract(q.y), 0.6);
+      float band = step(abs(fract(vWorld.z * 0.25) - 0.5), 0.12);
+      albedo = mix(albedo, vec3(0.8), txt * band * top * 0.8);
+    `,
+  });
   const pinM = g.ink({ color: "#c8c0b0", spec: 1, gloss: 50, hatch: 0.4 });
   const capM = g.ink({ color: "#2f5fa8", mode: "u", scale: 20, spec: 0.7, gloss: 40 });
   const parts: THREE.BufferGeometry[] = [];
@@ -268,6 +284,11 @@ export const makePCB = (g: GL, size = 40) => {
     if (r() < 0.5) caps.push(cyl(0.35, 0.35, 0.9 + r() * 0.6, 20, x, 0.5, z));
     else parts.push(place(new THREE.CapsuleGeometry(0.12, 0.5, 4, 10).rotateZ(Math.PI / 2), [x, 0.14, z]));
   }
+  // dense surface-mount resistors / capacitors
+  const smd = new THREE.InstancedMesh(new THREE.BoxGeometry(0.28, 0.1, 0.14), g.ink({ color: "#2a2622", hatch: 0.3, instanced: true, frag: "albedo = mix(albedo, vec3(0.8, 0.75, 0.65), step(0.35, abs(vObj.x) / 0.14 * 0.5));" }), 600);
+  for (let i = 0; i < 600; i++) smd.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3((r() - 0.5) * size * 0.95, 0.05, (r() - 0.5) * size * 0.95), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, r() < 0.5 ? 0 : Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1)));
+  smd.frustumCulled = false;
+  group.add(smd);
   group.add(new THREE.Mesh(merge(parts), chipM), new THREE.Mesh(merge(pins), pinM), new THREE.Mesh(merge(caps), capM));
   return { group, board };
 };

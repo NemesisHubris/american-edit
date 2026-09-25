@@ -3,11 +3,13 @@
 import * as THREE from "three";
 import type { GL } from "../GLShot";
 import { makeSky } from "../sky";
-import { terrain, extrude, merge, place } from "../geo";
+import { terrain, extrude, merge, place, smoothIco } from "../geo";
+import { fbm2 } from "../noise";
+import { rng } from "../../lib/random";
 import { craterField, lunarHeight, makeEarth, regolithMat } from "../models/space";
 import { limbGeo, loftGeo } from "../figure";
 
-export const lunarSet = (g: GL, o: { sun?: [number, number, number]; earth?: [number, number, number]; earthR?: number; flatAt?: [number, number, number]; seed?: string; shadows?: number } = {}) => {
+export const lunarSet = (g: GL, o: { rocks?: number; sun?: [number, number, number]; earth?: [number, number, number]; earthR?: number; flatAt?: [number, number, number]; seed?: string; shadows?: number } = {}) => {
   const sh = g.shared;
   sh.uSunDir.value.set(...(o.sun ?? [0.6, 0.32, 0.25])).normalize();
   sh.uSunCol.value.set(1.35, 1.3, 1.2);
@@ -32,6 +34,29 @@ export const lunarSet = (g: GL, o: { sun?: [number, number, number]; earth?: [nu
   };
   const ground = new THREE.Mesh(terrain(600, 600, 320, 320, hf), regolithMat(g));
   g.scene.add(ground);
+  // boulder field: lumpy rocks, many small, a few large, half-buried
+  const rockGeo = smoothIco(1, 3);
+  const rp = rockGeo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < rp.count; i++) {
+    const v = new THREE.Vector3().fromBufferAttribute(rp, i);
+    const b = 1 + (fbm2(v.x * 2 + 3, v.y * 2 + v.z * 2, 4, 5) - 0.5) * 0.8;
+    rp.setXYZ(i, v.x * b, v.y * b * 0.7, v.z * b);
+  }
+  rockGeo.computeVertexNormals();
+  const rockM = g.ink({ color: "#a9a49a", mode: "screen", angle: 35, scale: 3.4, cross: 0.8, shade: 1, instanced: true });
+  const nRocks = o.rocks ?? 500;
+  const rocks = new THREE.InstancedMesh(rockGeo, rockM, nRocks);
+  const rr = rng((o.seed ?? "mare") + "rocks");
+  for (let i = 0; i < nRocks; i++) {
+    const rad = 4 + Math.pow(rr(), 0.7) * 120;
+    const a = rr() * Math.PI * 2;
+    const x = (flat?.[0] ?? 0) + Math.cos(a) * rad;
+    const z = (flat?.[1] ?? 0) + Math.sin(a) * rad;
+    const s = 0.05 + Math.pow(rr(), 6) * 1.6;
+    rocks.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(x, hf(x, z) - s * 0.25, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(), rr() * 6, rr())), new THREE.Vector3(s, s, s)));
+  }
+  rocks.frustumCulled = false;
+  g.scene.add(rocks);
   if (o.shadows) g.enableShadows(2048, o.shadows, 120);
   let earth: ReturnType<typeof makeEarth> | null = null;
   if (o.earth) {
