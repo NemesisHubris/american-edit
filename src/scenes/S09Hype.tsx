@@ -523,7 +523,7 @@ const G = (setup: (g: GL) => (f: number, t: number) => void) => {
   return <C />;
 };
 
-const S = (a: number, b: number, el: React.ReactNode, enter: "cut" | "flash" | "punch" | "whip" | "whipUp" = "cut", name = "") => ({
+const S = (a: number, b: number, el: React.ReactNode, enter: "cut" | "flash" | "punch" | "whip" | "whipUp" | "zoom" = "cut", name = "") => ({
   from: c(a),
   dur: c(b) - c(a),
   el,
@@ -540,10 +540,10 @@ export const hype: SceneDef = {
     S(1, 1.5, G(wallSetup(false)), "punch", "wall cracks"),
     S(1.5, 2.5, G(wallSetup(true)), "cut", "wall falls"),
     S(2.5, 3, G(circuitSetup(false)), "whip", "circuit"),
-    S(3, 3.5, G(circuitSetup(true)), "cut", "circuit macro"),
+    S(3, 3.5, G(circuitSetup(true)), "zoom", "circuit macro"),
     S(3.5, 4.5, G(computersSetup), "punch", "computers"),
     S(4.5, 5.5, G(netSetup), "whip", "network map"),
-    S(5.5, 6.5, G(phoneSetup(false)), "cut", "phone"),
+    S(5.5, 6.5, G(phoneSetup(false)), "zoom", "phone"),
     S(6.5, 7.5, G(phoneSetup(true)), "cut", "phone close"),
     S(7.5, 8, G(jetsSetup(false)), "punch", "jets"),
     S(8, 9, G(jetsSetup(true)), "cut", "vapor trails"),

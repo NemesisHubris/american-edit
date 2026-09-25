@@ -606,7 +606,7 @@ export const ingenuity: SceneDef = {
   shots: [
     { from: 0, dur: c(2), el: shot(locoSetup), enter: "burn", origin: [1500, 300], name: "locomotive" },
     { from: c(2), dur: c(3.5) - c(2), el: shot(spikeSetup), enter: "whip", name: "golden spike" },
-    { from: c(3.5), dur: c(5) - c(3.5), el: shot(bulbSetup), enter: "punch", name: "light bulb" },
+    { from: c(3.5), dur: c(5) - c(3.5), el: shot(bulbSetup), enter: "zoom", name: "light bulb" },
     { from: c(5), dur: c(7) - c(5), el: shot(flyerSetup), enter: "flash", name: "wright flyer" },
     { from: c(7), dur: c(8.5) - c(7), el: shot(modelTSetup), enter: "whip", name: "model t" },
     { from: c(8.5), dur: c(10.5) - c(8.5), el: shot(damSetup), enter: "ink", origin: [960, 600], name: "hoover dam" },

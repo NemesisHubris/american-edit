@@ -74,7 +74,7 @@ export const pause: SceneDef = {
   seedBase: 70,
   shots: [
     { from: 0, dur: c(2.5), el: <PadShot />, enter: "ink", origin: [1080, 500], name: "pad at dawn" },
-    { from: c(2.5), dur: c(5) - c(2.5), el: <TiltShot />, enter: "morph", name: "tilt up" },
+    { from: c(2.5), dur: c(5) - c(2.5), el: <TiltShot />, enter: "zoom", name: "tilt up" },
   ],
   Overlay: () => <Quote {...QUOTES.kennedy} start={c(0.5) + 6} end={c(5)} framesPerWord={4} />,
 };

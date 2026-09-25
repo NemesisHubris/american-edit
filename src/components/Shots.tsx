@@ -8,7 +8,7 @@ import { Pt, smoothD } from "../lib/engrave";
 import { useUid } from "../lib/uid";
 import { PaperOverlay } from "./Parchment";
 
-export type TransitionKind = "cut" | "whip" | "whipUp" | "whipDown" | "ink" | "burn" | "morph" | "flash" | "punch";
+export type TransitionKind = "cut" | "whip" | "whipUp" | "whipDown" | "ink" | "burn" | "morph" | "flash" | "punch" | "zoom";
 
 export type ShotSpec = {
   from: number;
@@ -32,6 +32,7 @@ const DEFAULT_TDUR: Record<TransitionKind, number> = {
   morph: 12,
   flash: 0,
   punch: 0,
+  zoom: 10,
 };
 
 const WHIP_OUT = 4;
@@ -89,7 +90,7 @@ export const Shots: React.FC<{ shots: ShotSpec[]; overlay?: boolean; seedBase?: 
     const td = s.tdur ?? DEFAULT_TDUR[kind];
     const nextKind = next?.enter ?? "cut";
     const nextTd = next ? next.tdur ?? DEFAULT_TDUR[nextKind] : 0;
-    const overlapsNext = next && (nextKind === "ink" || nextKind === "burn" || nextKind === "morph");
+    const overlapsNext = next && (nextKind === "ink" || nextKind === "burn" || nextKind === "morph" || nextKind === "zoom");
     const end = next ? next.from + (overlapsNext ? nextTd : 0) : Infinity;
     if (f < s.from || f >= end) return;
     topIndex = i;
@@ -144,6 +145,12 @@ export const Shots: React.FC<{ shots: ShotSpec[]; overlay?: boolean; seedBase?: 
             {smears}
           </g>,
         );
+      } else if (kind === "zoom") {
+        // push through: the new shot rushes in from depth with radial blur
+        const q = easeOut(p);
+        style.transform = `scale(${1.7 - 0.7 * q})`;
+        style.opacity = Math.min(1, p * 1.8);
+        style.filter = `blur(${(1 - q) * 14}px)`;
       } else if (kind === "punch") {
         const sp = spring({ frame: a, fps, config: { damping: 14, stiffness: 240, mass: 0.6 } });
         style.transform = `scale(${1.16 - 0.16 * sp})`;
@@ -169,6 +176,12 @@ export const Shots: React.FC<{ shots: ShotSpec[]; overlay?: boolean; seedBase?: 
         }
       }
     }
+    // exiting by zoom: the old shot pushes past the camera
+    if (next && nextKind === "zoom" && f >= next.from) {
+      const q = easeIn(clamp((f - next.from) / nextTd));
+      style.transform = `scale(${1 + q * 1.4})`;
+      style.filter = `blur(${q * 18}px)`;
+    }
     let inkFlood: React.ReactNode = null;
     if (next && nextKind === "ink" && f >= next.from) {
       const p1 = clamp((f - next.from) / (nextTd * 0.55));
@@ -183,6 +196,7 @@ export const Shots: React.FC<{ shots: ShotSpec[]; overlay?: boolean; seedBase?: 
     }
     const fid = `${uid}b${i}`;
     if (blur > 0.5) style.filter = `url(#${fid})`;
+    if (style.filter === undefined) delete style.filter;
     layers.push(
       <Sequence key={i} from={s.from} layout="none" name={s.name ?? `shot ${i}`}>
         {blur > 0.5 && (
