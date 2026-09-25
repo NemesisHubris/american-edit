@@ -101,7 +101,7 @@ const RUSH_HEADS: [HeadStyle, number, number, number, number][] = [
 
 export const rushmoreHeight = (x: number, up: number) => {
   // granite face: vertical fractures, rounded summit, talus apron
-  let h = (ridged2(x * 0.05, up * 0.012, 4, 9) - 0.45) * 14 + (fbm2(x * 0.02, up * 0.02, 4, 3) - 0.5) * 16;
+  let h = (ridged2(x * 0.06, up * 0.015, 5, 9) - 0.45) * 18 + (fbm2(x * 0.025, up * 0.025, 5, 3) - 0.5) * 22 + (ridged2(x * 0.2, up * 0.05, 3, 4) - 0.4) * 3;
   h += -Math.pow(Math.max(0, up - 66), 1.6) * 0.45 + Math.max(0, 14 - up) * 1.3 - Math.abs(x) * 0.08;
   RUSH_HEADS.forEach(([st, hx, hy, dz, s], i) => {
     const a = s * 0.42 * (st.wide ?? 1);
@@ -137,7 +137,7 @@ export const makeRushmore = (g: GL) => {
   });
   const group = new THREE.Group();
   const cliff = memo("rushCliff", () => {
-    const gg = terrain(240, 110, 480, 260, (x, zz) => rushmoreHeight(x, -zz + 55));
+    const gg = terrain(420, 110, 700, 260, (x, zz) => rushmoreHeight(x, -zz + 55));
     gg.rotateX(Math.PI / 2);
     return gg;
   });

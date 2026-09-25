@@ -1,281 +1,217 @@
-// 4. A NATION TESTED — 1863. Cannons fire with recoil and smoke; fog rolls
-// over a split-rail fence at dawn; a lone silhouette in a stovepipe hat; the
-// Lincoln Memorial columns draw themselves as the camera tilts up.
-import { useCurrentFrame } from "remotion";
-import { Camera, Layer } from "../components/Camera";
-import { InkDraw } from "../components/InkDraw";
-import { Paper } from "../components/Parchment";
-import { Dust, Embers, Fog, Smoke, Sparks } from "../components/Particles";
-import { Birds, Clouds, EngravedSky, Sun } from "../components/Sky";
+// 4. A NATION TESTED — "1863". Napoleon guns fire with recoil and smoke on a
+// foggy field; fog rolls across a split-rail fence at Gettysburg at dawn; a
+// lone tall figure in a stovepipe hat against fast clouds; the camera tilts up
+// the Lincoln Memorial columns as they draw themselves.
+import * as THREE from "three";
 import { YearSlam } from "../components/YearSlam";
 import { Quote } from "../components/WordPop";
 import { QUOTES } from "../quotes";
-import { cannonParts, memorialItems, railFence } from "../art/civilwar";
-import { F, grass, groundHatch, HT, L, tree } from "../art/kit";
-import { hatch, polyD, Pt, smoothD } from "../lib/engrave";
-import { clamp, easeInOut, memo, ramp, TAU } from "../lib/math";
-import { usePalette } from "../lib/palette";
-import { noise1 } from "../lib/random";
-import { DISPLAY_FAMILY } from "../fonts";
 import { sceneClock } from "../timeline";
+import { hash } from "../lib/random";
+import { GLShot, GL, driveCamera, drawIn } from "../gl/GLShot";
+import { makeSky } from "../gl/sky";
+import { makeCannon, makeFence, makeMemorial, makeTree } from "../gl/models/civilwar";
+import { makeBirds, makeGround, makeReeds } from "../gl/env";
+import { makeFigure } from "../gl/figure";
+import { emit, Glows, Puff, Puffs, Smoke } from "../gl/particles";
 import type { SceneDef } from "./types";
 
 const c = sceneClock("tested");
 const FIRE_A = [c(0.5), c(2)];
 const FIRE_B = [c(1.5)];
 
-const recoil = (f: number, fires: number[]) => {
-  let r = 0;
-  for (const t of fires) {
-    const a = f - t;
-    if (a >= 0) r = Math.max(r, a < 2 ? (a / 2) * 60 : 60 * Math.exp(-(a - 2) / 10));
-  }
-  return r;
-};
-
-const Cannon: React.FC<{ x: number; y: number; s: number; fires: number[]; seed: string; elev?: number }> = ({ x, y, s, fires, seed, elev = -7 }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const parts = memo("cw:cannon", cannonParts);
-  const rc = recoil(f, fires);
-  const roll = (rc / 118) * 57.3;
-  const pivot: Pt = [0, -150];
-  const a = (elev * Math.PI) / 180;
-  const mx = pivot[0] + parts.muzzle[0] * Math.cos(a);
-  const my = pivot[1] + parts.muzzle[0] * Math.sin(a);
-  const wx = x + rc * s + mx * s;
-  const wy = y + my * s;
-  return (
-    <g>
-      <g transform={`translate(${x + rc * s} ${y}) scale(${s})`}>
-        <InkDraw items={parts.carriage} start={0} dur={14} />
-        <g transform={`translate(${pivot[0]} ${pivot[1]}) rotate(${elev})`}>
-          <InkDraw items={parts.barrel} start={2} dur={14} />
-        </g>
-        <g transform={`translate(0 -118) rotate(${roll})`}>
-          <InkDraw items={parts.wheel} start={4} dur={12} />
-        </g>
-      </g>
-      {fires.map((t, i) => {
-        const age = f - t;
-        if (age < 0 || age > 5) return null;
-        const r = 120 * s * (1 - age / 6);
-        const pts: Pt[] = Array.from({ length: 16 }, (_, k) => {
-          const aa = (k / 16) * TAU;
-          const rr = k % 2 ? r * 0.35 : r * (0.8 + noise1(k + age, i) * 0.3);
-          return [wx - r * 0.6 + Math.cos(aa) * rr * 1.4, wy + Math.sin(aa) * rr * 0.8] as Pt;
-        });
-        return (
-          <g key={i}>
-            <circle cx={wx - r * 0.5} cy={wy} r={r * 2.2} fill={pal.glow} opacity={0.45 * (1 - age / 5)} />
-            <path d={polyD(pts)} fill={pal.flame} stroke={pal.ink} strokeWidth={1.5} />
-            <path d={polyD(pts.map(([px, py]) => [wx - r * 0.6 + (px - (wx - r * 0.6)) * 0.5, wy + (py - wy) * 0.5] as Pt))} fill="#fffbe8" />
-          </g>
-        );
-      })}
-      {fires.map((t, i) => (
-        <g key={`s${i}`}>
-          <Smoke x={wx - 20 * s} y={wy} count={16} start={t} life={70} size={110 * s} spread={3} vx={-13 * s} vy={-1.2} wind={-0.6} shade={0.55} seed={`${seed}${i}`} />
-          <Sparks x={wx} y={wy} t0={t} count={26} speed={26 * s} angle={Math.PI} spread={1.2} gravity={0.6} life={16} seed={`${seed}sp${i}`} />
-        </g>
-      ))}
-    </g>
-  );
-};
-
-// A. Cannons firing on a foggy battlefield
-const CannonShot: React.FC = () => {
-  const pal = usePalette();
-  const geo = memo("cw:field", () => {
-    const ridge: Pt[] = [[-500, 700], ...Array.from({ length: 40 }, (_, i) => [-500 + i * 80, 560 - Math.sin(i * 0.6) * 30 - Math.sin(i * 0.17) * 40] as Pt), [2700, 700]];
-    const trees = [...tree(100, 570, 220, "ct1", { dark: 0.4 }), ...tree(380, 555, 260, "ct2", { dark: 0.4 }), ...tree(1500, 560, 240, "ct3", { dark: 0.4 }), ...tree(1760, 570, 200, "ct4", { dark: 0.4 })];
-    return {
-      ridge: [F(polyD(ridge), "foliage", 0.4), HT(hatch([ridge], { angle: 0, spacing: 4, seed: "cr" }), 1, 0.5), L(smoothD(ridge.slice(1, -1)), 1.8)],
-      trees,
-      ground: [F(polyD([[-500, 640], [2700, 640], [2700, 1400], [-500, 1400]]), "ground", 0.55), HT(groundHatch(-500, 2700, 640, 1300, "cgnd"), 1, 0.7)],
-      grassD: grass(-400, 2400, 960, "cg", 0.1, 30),
-    };
+// A. Napoleon guns fire on the beats: recoil, rolling wheels, muzzle flash, smoke
+const cannonSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.55, 0.35, -0.75).normalize();
+  sh.uSunCol.value.set(1.15, 0.95, 0.72);
+  sh.uSky.value.set(0.5, 0.5, 0.52);
+  sh.uGround.value.set(0.3, 0.27, 0.22);
+  g.camera.far = 2000;
+  const sky = makeSky(sh, { top: "#8a9098", horizon: "#e6d8bd", bottom: "#a0937a", glow: 0.8, sunSize: 0.05, rays: 0.6, lines: 0.7, lineSpacing: 4, clouds: 0.4, cloudSpeed: 0.05, cloudCol: "#f2ead8", cloudShade: "#8c8478", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [30, 400, 0.6], fogCol: "#e3d9c4", fogNoise: 0.8, fogTop: 0.3 });
+  const ground = makeGround(g, { size: 1500, res: 200, y: 0, amp: 5, freq: 0.01, color: "#8a8a5a", flat: (x, z) => Math.min(1, Math.hypot(x, z) / 40), mat: { mode: "stipple", hatch: 0.8 } });
+  g.scene.add(ground.mesh);
+  const grass = makeReeds(g, { count: 1800, x: [-14, 14], z: [-10, 3], y: 0, h: [0.06, 0.18], w: 0.01, color: "#9a9868", seed: "cgrass", sway: 0.25, wind: 1.8, edges: 0 });
+  g.scene.add(grass.mesh);
+  const guns = [
+    { gun: makeCannon(g), pos: [0, 0, 0], yaw: -0.5, fires: FIRE_A },
+    { gun: makeCannon(g), pos: [-9, 0, -9], yaw: -0.45, fires: FIRE_B },
+    { gun: makeCannon(g), pos: [-18, 0, -19], yaw: -0.4, fires: [c(1)] },
+  ];
+  guns.forEach((q) => {
+    q.gun.root.position.set(q.pos[0], q.pos[1], q.pos[2]);
+    q.gun.root.rotation.y = q.yaw;
+    g.scene.add(q.gun.root);
   });
-  return (
-    <Camera keys={[{ f: 0, z: 1.1, x: -40, y: 20 }, { f: 75, z: 1.02, x: 40, y: 0 }]} handheld={5} seed={41}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.45} />
-        <Clouds speed={2.2} clouds={[{ x: 0, y: 40, w: 600, h: 150, seed: "cc1" }, { x: 900, y: 0, w: 500, h: 130, seed: "cc2" }, { x: 1600, y: 80, w: 420, h: 110, seed: "cc3" }]} />
-      </Layer>
-      <Layer depth={0.3}>
-        <InkDraw items={geo.ridge} start={0} dur={10} />
-        <InkDraw items={geo.trees} start={0} dur={16} />
-        <Fog y={600} h={220} speed={2.2} opacity={0.9} seed="cfog1" />
-      </Layer>
-      <Layer depth={0.6}>
-        <InkDraw items={geo.ground} start={0} dur={8} />
-        <Cannon x={1480} y={760} s={0.55} fires={FIRE_B} seed="cb" />
-      </Layer>
-      <Layer depth={1}>
-        <Cannon x={960} y={960} s={1.2} fires={FIRE_A} seed="ca" />
-        <path d={geo.grassD} fill="none" stroke={pal.ink} strokeWidth={1.8} opacity={0.8} />
-      </Layer>
-      <Layer depth={1.5}>
-        <Fog y={1000} h={300} speed={3.6} opacity={0.7} seed="cfog2" />
-        <Embers x={960} y={1100} w={1800} count={30} rise={2} seed="cemb" />
-      </Layer>
-    </Camera>
-  );
-};
-
-// B. Fog rolling across a split-rail fence at dawn
-const FenceShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const geo = memo("cw:fence", () => {
-    const hills: Pt[] = [[-500, 640], ...Array.from({ length: 40 }, (_, i) => [-500 + i * 80, 540 - Math.sin(i * 0.35) * 40 - Math.sin(i * 0.9) * 10] as Pt), [2700, 640]];
-    return {
-      fence: railFence(),
-      hills: [F(polyD(hills), "foliage", 0.3), HT(hatch([hills], { angle: 0, spacing: 4.5, seed: "fhl" }), 1, 0.4), L(smoothD(hills.slice(1, -1)), 1.6)],
-      trees: [...tree(1350, 548, 180, "ft1", { dark: 0.45 }), ...tree(1480, 540, 150, "ft2", { dark: 0.45 }), ...tree(200, 560, 200, "ft3", { dark: 0.45 })],
-      ground: [F(polyD([[-500, 560], [2700, 560], [2700, 1400], [-500, 1400]]), "ground", 0.5), HT(groundHatch(-500, 2700, 570, 1300, "fgnd", 6), 1, 0.7)],
-      grassD: grass(-400, 2400, (x) => 1030 - x * 0.02, "fg2", 0.12, 34),
-    };
+  // gunners by each piece
+  const crews: { fig: ReturnType<typeof makeFigure>; gun: number; ph: number }[] = [];
+  guns.forEach((q, gi) => {
+    for (let k = 0; k < 2; k++) {
+      const fig = makeFigure(g, "frock", { color: { coat: "#2b3550", pants: "#5a6a80", hat: "#2b3550" } });
+      const side = k ? 1 : -1;
+      fig.root.position.set(q.pos[0] + side * 1.6 * Math.cos(q.yaw), 0, q.pos[2] - side * 1.6 * Math.sin(q.yaw) - 1.2);
+      fig.root.rotation.y = q.yaw + (side > 0 ? -0.6 : 0.6);
+      g.scene.add(fig.root);
+      crews.push({ fig, gun: gi, ph: k * 1.3 + gi });
+    }
   });
-  return (
-    <Camera keys={[{ f: 0, z: 1.08, x: -60 }, { f: 60, z: 1.16, x: 60, y: -10 }]} handheld={3} seed={42}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.2} wash="dawn" washOp={0.35} />
-        <Sun x={1640} y={500 - f * 0.6} r={70} spin={0.2} />
-        <Birds x0={-100} y0={260} x1={2000} y1={180} dur={80} count={7} seed="fbirds" />
-      </Layer>
-      <Layer depth={0.3}>
-        <InkDraw items={geo.hills} start={0} dur={10} />
-        <InkDraw items={geo.trees} start={2} dur={14} />
-        <Fog y={560} h={200} speed={2.5} opacity={1} seed="ffog0" />
-      </Layer>
-      <Layer depth={1}>
-        <InkDraw items={geo.ground} start={0} dur={8} />
-        <InkDraw items={geo.fence} start={2} dur={22} overlap={0.2} hatchAt={12} washAt={14} />
-        <Fog y={780} h={300} speed={4} opacity={0.85} count={11} seed="ffog1" />
-      </Layer>
-      <Layer depth={1.5}>
-        <HtPath d={geo.grassD} />
-        <Fog y={1000} h={320} speed={6} opacity={0.8} seed="ffog2" />
-      </Layer>
-    </Camera>
-  );
+  const treeL = makeTree(g, "ct1", 14, 7);
+  treeL.group.position.set(-60, 0, -80);
+  const treeR = makeTree(g, "ct2", 12, 6);
+  treeR.group.position.set(40, 0, -110);
+  g.scene.add(treeL.group, treeR.group);
+  const smoke = new Smoke(g, 500, { color: "#f1ece2", heatCol: "#ffb060" });
+  g.scene.add(smoke.mesh);
+  const flashes = new Glows(sh, 20, "#ffd48a", 1.5);
+  g.scene.add(flashes.mesh);
+  const sparks = new Glows(sh, 200, "#ffc070", 1.2);
+  g.scene.add(sparks.mesh);
+  g.enableShadows(2048, 30, 80);
+  return (f: number, t: number) => {
+    driveCamera(g, [{ f: 0, pos: [4.5, 1.2, 4.2], look: [-2, 0.9, -3], fov: 46 }, { f: 75, pos: [3.4, 1.3, 3.2], look: [-3, 1.0, -4], fov: 44 }], f, 0.01, 41);
+    const sm: Puff[] = [];
+    const fl: Puff[] = [];
+    const sp: Puff[] = [];
+    guns.forEach((q, gi) => {
+      let recoil = 0;
+      const fwd = new THREE.Vector3(Math.sin(q.yaw), 0, Math.cos(q.yaw));
+      const muzzle = new THREE.Vector3(q.pos[0], 1.05, q.pos[2]).addScaledVector(fwd, 1.3);
+      for (const fr of q.fires) {
+        const a = (f - fr) / 30;
+        if (a < 0) continue;
+        recoil += Math.min(1, a * 8) * Math.exp(-a * 2.2) * 1.2;
+        if (a < 0.12) fl.push({ x: muzzle.x + fwd.x * 0.6, y: muzzle.y, z: muzzle.z + fwd.z * 0.6, size: 2.8 * (1 - a / 0.12), alpha: 1 });
+        const seed = gi * 10 + fr;
+        emit({ at: [muzzle.x, muzzle.y, muzzle.z], rate: 90, life: 4, vel: [fwd.x * 14, 1.5, fwd.z * 14], spread: 2.5, size: [0.4, 3.6], wind: [0.6, 0.35, 0.1], drag: 1.6, heat: 1, heatFade: 0.25, start: fr / 30, stop: fr / 30 + 0.2, seed }, t, sm);
+        for (let i = 0; i < 40; i++) {
+          const age = a - hash(i, seed) * 0.05;
+          if (age < 0 || age > 0.5) continue;
+          const v = 10 + hash(i, seed, 2) * 16;
+          sp.push({ x: muzzle.x + (fwd.x * v + (hash(i, seed, 3) - 0.5) * 6) * age, y: muzzle.y + (hash(i, seed, 4) * 4) * age - 4.9 * age * age, z: muzzle.z + (fwd.z * v + (hash(i, seed, 5) - 0.5) * 6) * age, size: 0.06, alpha: 1 - age / 0.5, stretch: 3 });
+        }
+      }
+      q.gun.root.position.set(q.pos[0] - fwd.x * recoil, 0, q.pos[2] - fwd.z * recoil);
+      q.gun.wheels.forEach((w) => (w.rotation.x = recoil / 0.7));
+      q.gun.carriage.rotation.x = -recoil * 0.06;
+    });
+    smoke.set(sm);
+    flashes.set(fl, g.camera);
+    sparks.set(sp, g.camera);
+    crews.forEach(({ fig, ph }) => {
+      const s = Math.sin(t * 2 + ph);
+      fig.pose({ bend: 0.25 + s * 0.05, lSh: [0.6 + s * 0.2, 0.2, 0], rSh: [0.9, 0.3, 0], lEl: 0.8, rEl: 1.1, lHip: [0.3, 0.1], rHip: [-0.1, 0.08], lKn: 0.4, crouch: 0.08 });
+    });
+  };
 };
 
-const HtPath: React.FC<{ d: string }> = ({ d }) => {
-  const pal = usePalette();
-  const f = useCurrentFrame();
-  return (
-    <g transform={`skewX(${-6 + noise1(f / 12, 3) * 5})`} style={{ transformOrigin: "960px 1040px", transformBox: "view-box" }}>
-      <path d={d} fill="none" stroke={pal.ink} strokeWidth={2} strokeLinecap="round" opacity={0.85} />
-    </g>
-  );
+// B. Worm fence at dawn with fog rolling through at three depths
+const fenceSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.7, 0.12, -0.7).normalize();
+  sh.uSunCol.value.set(1.3, 0.95, 0.6);
+  sh.uSky.value.set(0.48, 0.48, 0.55);
+  sh.uGround.value.set(0.3, 0.26, 0.2);
+  g.camera.far = 2000;
+  const sky = makeSky(sh, { top: "#6b7fa0", horizon: "#f2c58a", bottom: "#9a8a70", glow: 1.2, sunSize: 0.06, rays: 1, rayCount: 30, lines: 0.7, lineSpacing: 4, paper: 0.25, clouds: 0.25, cloudSpeed: 0.04, cloudCol: "#ffe8c8", cloudShade: "#9a8a86" });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [15, 300, 0.75], fogCol: "#eedcbc", fogNoise: 1, fogTop: 0.6 });
+  const ground = makeGround(g, { size: 1500, res: 220, y: 0, amp: 8, freq: 0.006, color: "#8a8a58", flat: (x, z) => Math.min(1, Math.abs(z) / 60), mat: { mode: "stipple", hatch: 0.8 } });
+  g.scene.add(ground.mesh);
+  const fence = makeFence(g, 30);
+  fence.mesh.position.set(-45, 0, 0);
+  g.scene.add(fence.mesh);
+  const grass = makeReeds(g, { count: 2500, x: [-25, 25], z: [-6, 4], y: 0, h: [0.08, 0.28], w: 0.01, color: "#9a9868", seed: "fgrass", sway: 0.3, wind: 1.5, edges: 0 });
+  g.scene.add(grass.mesh);
+  const trees = [makeTree(g, "ft1", 13, 7), makeTree(g, "ft2", 10, 5), makeTree(g, "ft3", 15, 8)];
+  trees[0].group.position.set(-30, 0, -40);
+  trees[1].group.position.set(12, 0, -60);
+  trees[2].group.position.set(45, 0, -90);
+  trees.forEach((tr) => g.scene.add(tr.group));
+  const fog = new Puffs(sh, 240, { lit: "#fff4e2", shade: "#c8b9a2", outline: 0.12, hatch: 0.25, lineSpacing: 4, soft: 0.6, rough: 0.35 });
+  g.scene.add(fog.mesh);
+  const birds = makeBirds(g, { count: 7, from: [-60, 18, -50], to: [80, 26, -70], spread: [16, 6, 10], size: 0.6, dur: 3, seed: "fb" });
+  g.scene.add(birds.mesh);
+  return (f: number, t: number) => {
+    driveCamera(g, [{ f: 0, pos: [-3, 1.5, 7.5], look: [2, 0.8, 0], fov: 42 }, { f: 60, pos: [0, 1.6, 7], look: [5, 0.8, 0], fov: 42 }], f, 0.006, 42);
+    const fl: Puff[] = [];
+    for (let i = 0; i < 200; i++) {
+      const depth = i % 3;
+      const sp = [2.2, 1.3, 0.7][depth];
+      const x = ((hash(i, 1) * 120 + t * sp) % 120) - 60;
+      const z = [3 + hash(i, 2) * 4, -4 - hash(i, 2) * 10, -20 - hash(i, 2) * 30][depth];
+      fl.push({ x, y: 0.3 + hash(i, 3) * 2.2, z, size: [1.4, 3, 6][depth] * (0.7 + hash(i, 4) * 0.6), alpha: 0.4 * Math.sin(((x + 60) / 120) * Math.PI), seed: hash(i, 5) * 9 });
+    }
+    fog.set(fl, g.camera);
+    birds.update(t);
+  };
 };
 
-// C. A lone silhouette in a stovepipe hat against fast-moving clouds
-const LincolnShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const geo = memo("cw:hill", () => {
-    const hill: Pt[] = [[-500, 1400], [-500, 900], [200, 820], [700, 770], [1100, 752], [1500, 770], [2000, 830], [2600, 900], [2600, 1400]];
-    return { hill: smoothD(hill, true, 0.4), grassD: grass(-400, 2500, (x) => 820 - Math.exp(-Math.pow((x - 1100) / 700, 2)) * 68 + 2, "lg", 0.1, 30) };
-  });
-  const tail = noise1(f / 6, 2) * 14 + Math.sin(f / 4) * 6;
-  const X = 1150;
-  const Y = 756;
-  const man = [
-    // legs (front leg striding)
-    `M${X - 30} ${Y}C${X - 28} ${Y - 60} ${X - 22} ${Y - 130} ${X - 12} ${Y - 200}L${X + 10} ${Y - 200}C${X + 2} ${Y - 130} ${X - 8} ${Y - 60} ${X - 10} ${Y}Z`,
-    `M${X + 14} ${Y}C${X + 12} ${Y - 70} ${X + 10} ${Y - 140} ${X + 8} ${Y - 200}L${X + 30} ${Y - 200}C${X + 32} ${Y - 140} ${X + 34} ${Y - 70} ${X + 34} ${Y}Z`,
-    `M${X - 40} ${Y + 2}h32v-10h-26ZM${X + 12} ${Y + 2}h32v-10h-26Z`,
-    // frock coat: broad shoulders, fitted waist, skirt flaring to the knee
-    `M${X - 42} ${Y - 385}C${X - 50} ${Y - 340} ${X - 36} ${Y - 290} ${X - 32} ${Y - 250}C${X - 40} ${Y - 210} ${X - 50} ${Y - 170} ${X - 52} ${Y - 140}L${X + 10} ${Y - 150}L${X + 62 + tail} ${Y - 132 + tail * 0.3}C${X + 54 + tail * 0.6} ${Y - 180} ${X + 40} ${Y - 220} ${X + 34} ${Y - 250}C${X + 44} ${Y - 300} ${X + 48} ${Y - 350} ${X + 38} ${Y - 388}Z`,
-    // collar + neck
-    `M${X - 14} ${Y - 384}L${X - 12} ${Y - 404}L${X + 14} ${Y - 404}L${X + 16} ${Y - 384}Z`,
-    // head with beard (profile facing left)
-    `M${X - 18} ${Y - 402}C${X - 34} ${Y - 408} ${X - 40} ${Y - 432} ${X - 36} ${Y - 448}L${X - 45} ${Y - 462}L${X - 35} ${Y - 468}C${X - 32} ${Y - 490} ${X - 16} ${Y - 500} ${X + 4} ${Y - 500}C${X + 24} ${Y - 500} ${X + 30} ${Y - 478} ${X + 28} ${Y - 456}C${X + 28} ${Y - 432} ${X + 20} ${Y - 412} ${X + 8} ${Y - 402}Z`,
-    // stovepipe hat
-    `M${X - 46} ${Y - 494}L${X + 42} ${Y - 494}L${X + 40} ${Y - 506}L${X - 44} ${Y - 506}Z`,
-    `M${X - 31} ${Y - 506}L${X - 33} ${Y - 628}L${X + 31} ${Y - 628}L${X + 28} ${Y - 506}Z`,
-    // arm bent, hand at the lapel
-    `M${X - 36} ${Y - 360}C${X - 56} ${Y - 320} ${X - 54} ${Y - 280} ${X - 30} ${Y - 262}L${X - 8} ${Y - 300}L${X - 16} ${Y - 310}L${X - 30} ${Y - 290}C${X - 38} ${Y - 310} ${X - 30} ${Y - 340} ${X - 22} ${Y - 360}Z`,
-  ].join("");
-  return (
-    <Camera keys={[{ f: 0, z: 1.0, y: 20 }, { f: 75, z: 1.12, y: -30, x: 40 }]} handheld={3} seed={43}>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={1300} y={-300} dark={0.4} wash="dawn" washOp={0.3} />
-        <Sun x={1150} y={330} r={110} rays={36} spin={0.5} rayLen={1700} />
-      </Layer>
-      <Layer depth={0.2}>
-        <Clouds
-          speed={7}
-          clouds={[
-            { x: -300, y: 80, w: 700, h: 170, seed: "lc1" },
-            { x: 500, y: 20, w: 520, h: 140, seed: "lc2" },
-            { x: 1200, y: 170, w: 640, h: 160, seed: "lc3" },
-            { x: 1900, y: 60, w: 560, h: 150, seed: "lc4" },
-            { x: 800, y: 300, w: 420, h: 110, seed: "lc5" },
-          ]}
-        />
-      </Layer>
-      <Layer depth={1}>
-        <path d={geo.hill} fill={pal.ink} />
-        <path d={hatch([[[-500, 1400], [-500, 900], [200, 820], [700, 770], [1100, 752], [1500, 770], [2000, 830], [2600, 900], [2600, 1400]]], { angle: 20, spacing: 6, seed: "hl" })} stroke={pal.inkSoft} strokeWidth={1} opacity={0.5} />
-        <g transform={`skewX(${-8 + noise1(f / 8, 5) * 6})`} style={{ transformOrigin: "960px 800px", transformBox: "view-box" }}>
-          <path d={geo.grassD} fill="none" stroke={pal.ink} strokeWidth={2.4} strokeLinecap="round" />
-        </g>
-        <g transform={`translate(${X} ${Y}) scale(1.1) translate(${-X} ${-Y})`}>
-          <path d={man} fill="none" stroke={pal.glow} strokeWidth={5} opacity={0.5} />
-          <path d={man} fill={pal.ink} />
-        </g>
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={40} speed={2.2} color="inkSoft" seed="ldust" />
-      </Layer>
-    </Camera>
-  );
+// C. A lone tall figure in a stovepipe hat, backlit, clouds racing
+const lincolnSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.1, 0.18, -1).normalize();
+  sh.uSunCol.value.set(1.2, 0.9, 0.6);
+  sh.uSky.value.set(0.3, 0.3, 0.34);
+  sh.uGround.value.set(0.15, 0.13, 0.11);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#50607a", horizon: "#f5c88f", bottom: "#6a5a48", glow: 1.4, sunSize: 0.08, rays: 1.2, rayCount: 26, lines: 0.7, lineSpacing: 4, clouds: 0.55, cloudSpeed: 0.35, cloudScale: 1.3, cloudHeight: 0.15, cloudCol: "#fff0d6", cloudShade: "#6a6060", paper: 0.15 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [100, 900, 0.4], fogCol: "#e8c8a0" });
+  const hill = makeGround(g, { size: 3000, res: 200, y: -1, amp: 4, freq: 0.004, color: "#5e5a3e", flat: () => 1 });
+  g.scene.add(hill.mesh);
+  const lincoln = makeFigure(g, "frock", { scale: 1.08, color: { coat: "#141210", pants: "#141210", hat: "#0e0c0b", skin: "#3a2e28" }, mat: { rim: 1.6, rimPow: 2, rimCol: "#ffd9a0", hatch: 0.6 } });
+  g.scene.add(lincoln.root);
+  const grass = makeReeds(g, { count: 3000, x: [-6, 6], z: [-3, 3], y: -0.02, h: [0.15, 0.45], w: 0.015, color: "#3f3d28", seed: "lg", sway: 0.5, wind: 3, edges: 0 });
+  g.scene.add(grass.mesh);
+  const tree = makeTree(g, "lt", 9, 5, 40);
+  tree.group.position.set(-9, -0.5, -6);
+  g.scene.add(tree.group);
+  return (f: number, t: number) => {
+    lincoln.pose({ yaw: 0.25, lSh: [0.05, 0.12, 0], rSh: [0.1, 0.1, 0], lEl: 0.15, rEl: 0.2, lHip: [0.05, 0.05], rHip: [-0.03, 0.05], neck: 0.08 + Math.sin(t * 0.8) * 0.02, headYaw: 0.1 });
+    driveCamera(g, [{ f: 0, pos: [1.2, 0.4, 5.2], look: [0, 1.5, 0], fov: 38 }, { f: 75, pos: [0.4, 0.3, 4.3], look: [0, 1.6, 0], fov: 38 }], f, 0.004, 43);
+  };
 };
 
 // D. Tilt up the Lincoln Memorial as its columns draw themselves
-const MemorialShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const geo = memo("cw:memorial", memorialItems);
-  const t = easeInOut(clamp(f / 90));
-  return (
-    <Camera keys={[{ f: 0, x: 0, y: 60, z: 1.08 }, { f: 90, x: 0, y: -1180, z: 1.02 }]} handheld={3} seed={44}>
-      <Layer depth={0.3}>
-        <Paper />
-        <EngravedSky x={-600} y={-2600} w={3200} h={1600} dark={0.25} />
-        <Clouds speed={1.8} clouds={[{ x: 200, y: -2150, w: 600, h: 150, seed: "mc1" }, { x: 1300, y: -2250, w: 500, h: 130, seed: "mc2" }]} />
-      </Layer>
-      <Layer depth={1}>
-        <InkDraw items={geo.items} start={-8} dur={44} overlap={0.45} hatchAt={20} hatchDur={20} washAt={22} washDur={20} />
-        {geo.frieze.map((fr, i) => (
-          <text key={i} x={fr.x} y={fr.y} textAnchor="middle" fontFamily={DISPLAY_FAMILY} fontWeight={700} fontSize={18} letterSpacing={3} fill={pal.ink} opacity={ramp(f, 40 + i * 2, 50 + i * 2)}>
-            {fr.t}
-          </text>
-        ))}
-        <path d="M-200 -1900L700 -1900L2000 1100L1300 1100Z" fill={pal.sun} opacity={0.08 + 0.03 * Math.sin(f / 8)} />
-      </Layer>
-      <Layer depth={1.3}>
-        <Birds x0={-100} y0={-200 - t * 900} x1={2100} y1={-400 - t * 900} dur={70} count={6} seed="mbirds" />
-        <Dust count={40} speed={0.4} color="glow" seed="mdust" y={-1600} h={2800} />
-      </Layer>
-    </Camera>
-  );
+const memorialSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.6, 0.45, 0.65).normalize();
+  sh.uSunCol.value.set(1.2, 1.05, 0.85);
+  sh.uSky.value.set(0.5, 0.52, 0.6);
+  sh.uGround.value.set(0.3, 0.28, 0.25);
+  g.camera.far = 2000;
+  const sky = makeSky(sh, { top: "#6a86ad", horizon: "#e8e0cc", bottom: "#a09a8a", glow: 0.6, rays: 0.4, lines: 0.7, lineSpacing: 4, clouds: 0.35, cloudSpeed: 0.06, cloudCol: "#fbf6ea", cloudShade: "#9a9aa0", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  const mem = makeMemorial(g);
+  g.scene.add(mem.group);
+  g.enableShadows(2048, 45, 120);
+  if (g.shadow) g.shadow.center.set(0, 8, 0);
+  return (f: number) => {
+    const k = Math.min(1, f / 88);
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    g.camera.position.set(-10 + e * 4, 1.2 + e * 5, 42 - e * 6);
+    g.camera.fov = 48;
+    g.camera.lookAt(new THREE.Vector3(-4, 3 + e * 16, 10));
+    g.camera.updateProjectionMatrix();
+    drawIn(mem.mats, f, -6, 42, 0.3);
+  };
+};
+
+const shot = (setup: (g: GL) => (f: number, t: number) => void) => {
+  const C: React.FC = () => <GLShot setup={setup} />;
+  return <C />;
 };
 
 export const tested: SceneDef = {
   id: "tested",
   seedBase: 40,
   shots: [
-    { from: 0, dur: c(2.5), el: <CannonShot />, enter: "burn", origin: [300, 200], name: "cannons" },
-    { from: c(2.5), dur: c(4.5) - c(2.5), el: <FenceShot />, enter: "morph", name: "fence" },
-    { from: c(4.5), dur: c(7) - c(4.5), el: <LincolnShot />, enter: "ink", origin: [1150, 500], name: "lincoln" },
-    { from: c(7), dur: c(10) - c(7), el: <MemorialShot />, enter: "whipUp", name: "memorial" },
+    { from: 0, dur: c(2.5), el: shot(cannonSetup), enter: "burn", origin: [300, 200], name: "cannons" },
+    { from: c(2.5), dur: c(4.5) - c(2.5), el: shot(fenceSetup), enter: "morph", name: "fence" },
+    { from: c(4.5), dur: c(7) - c(4.5), el: shot(lincolnSetup), enter: "ink", origin: [1150, 500], name: "lincoln" },
+    { from: c(7), dur: c(10) - c(7), el: shot(memorialSetup), enter: "whipUp", name: "memorial" },
   ],
   hits: [
     { f: FIRE_A[0], amp: 22, dur: 14, punch: 0.03 },
@@ -289,3 +225,5 @@ export const tested: SceneDef = {
     </>
   ),
 };
+
+

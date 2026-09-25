@@ -378,10 +378,10 @@ const rushmoreSetup = (close: boolean) => (g: GL) => {
     const z = 12 + r() * 70;
     spots.push([x, -4 + (r() - 0.5) * 6 + z * 0.2, z, 3 + r() * 4]);
   }
-  for (let i = 0; i < 160; i++) {
-    const x = (r() - 0.5) * 240;
-    const up = 70 + r() * 30;
-    spots.push([x, up, -20 + rushmoreHeight(x, up) - 2, 2.5 + r() * 2.5]);
+  for (let i = 0; i < 40; i++) {
+    const x = (r() - 0.5) * 300;
+    const up = 86 + r() * 20;
+    spots.push([x, up, -20 + rushmoreHeight(x, up) - 3, 2.5 + r() * 2.5]);
   }
   const pines = makePines(g, spots);
   g.scene.add(pines.mesh);
@@ -463,19 +463,19 @@ const fireworksSetup = (variant: number) => (g: GL) => {
   const flashLight = new THREE.Color();
   const r2 = rng("fw" + variant);
   const shells = Array.from({ length: variant === 3 ? 14 : 7 }, (_, i) => ({
-    x: (r2() - 0.5) * 900,
-    y: 240 + r2() * 260,
-    z: -350 - r2() * 250,
+    x: (r2() - 0.5) * 700,
+    y: 260 + r2() * 220,
+    z: -280 - r2() * 150,
     t: (variant === 1 ? -0.4 : -0.6) + i * (variant === 3 ? 0.07 : 0.16) + r2() * 0.1,
     col: Math.floor(r2() * FW_COLS.length),
-    n: 80 + Math.floor(r2() * 60),
-    v: 90 + r2() * 70,
+    n: 110 + Math.floor(r2() * 60),
+    v: 150 + r2() * 90,
   }));
   return (f: number, t: number) => {
     const cams = [
-      [{ f: 0, pos: [0, 1.2, 137], look: [0, 150, -400], fov: 55 }, { f: 30, pos: [0, 1.25, 135], look: [0, 160, -400], fov: 54 }],
+      [{ f: 0, pos: [0, 1.2, 137], look: [0, 260, -400], fov: 58 }, { f: 30, pos: [0, 1.25, 135], look: [0, 275, -400], fov: 57 }],
       [{ f: 0, pos: [30, 20, 170], look: [-30, 300, -450], fov: 45 }, { f: 15, pos: [26, 18, 160], look: [-30, 310, -450], fov: 44 }],
-      [{ f: 0, pos: [-5, 1.1, 137], look: [10, 130, -400], fov: 62 }, { f: 30, pos: [-3, 1.15, 135], look: [10, 140, -400], fov: 62 }],
+      [{ f: 0, pos: [-5, 1.1, 137], look: [10, 240, -400], fov: 64 }, { f: 30, pos: [-3, 1.15, 135], look: [10, 255, -400], fov: 64 }],
       [{ f: 0, pos: [0, 40, 300], look: [0, 220, -450], fov: 58 }, { f: 30, pos: [0, 36, 280], look: [0, 240, -450], fov: 58 }],
     ] as const;
     driveCamera(g, cams[variant % 4] as never, f, 0.01, 13 + variant);
@@ -502,7 +502,7 @@ const fireworksSetup = (variant: number) => (g: GL) => {
           const at = Math.max(0, a - k * 0.06);
           const dist = (s.v * (1 - Math.exp(-drag * at))) / drag;
           const fall = 12 * at * at;
-          lists[s.col].push({ x: s.x + dir.x * dist, y: s.y + dir.y * dist - fall, z: s.z + dir.z * dist, size: (4.5 - k * 0.7) * (1 - a / 2.4), alpha: (1 - a / 2.2) * (1 - k * 0.18) * (0.8 + 0.2 * Math.sin(a * 40 + i)) });
+          lists[s.col].push({ x: s.x + dir.x * dist, y: s.y + dir.y * dist - fall, z: s.z + dir.z * dist, size: (6.5 - k * 1.0) * (1 - a / 2.4), alpha: (1 - a / 2.2) * (1 - k * 0.18) * (0.8 + 0.2 * Math.sin(a * 40 + i)) });
         }
       }
       flashLight.set(FW_COLS[s.col]);

@@ -92,7 +92,7 @@ export const makeWater = (
 // Instanced grass / reeds that sway in the wind
 export const makeReeds = (
   g: GL,
-  o: { count: number; x: [number, number]; z: [number, number]; y?: number | ((x: number, z: number) => number); h: [number, number]; w?: number; color?: ColorIn; seed?: string; sway?: number; wind?: number },
+  o: { count: number; x: [number, number]; z: [number, number]; y?: number | ((x: number, z: number) => number); h: [number, number]; w?: number; color?: ColorIn; seed?: string; sway?: number; wind?: number; edges?: number },
 ) => {
   // one tapered, bent blade
   const blade = new THREE.BufferGeometry();
@@ -124,6 +124,7 @@ export const makeReeds = (
     side: THREE.DoubleSide,
     shade: 0.8,
     castShadow: false,
+    edges: o.edges,
     uniforms: { uSway: { value: o.sway ?? 0.25 }, uWind: { value: o.wind ?? 1.3 } },
     vertexDecl: "uniform float uSway; uniform float uWind;",
     vertex: /* glsl */ `
