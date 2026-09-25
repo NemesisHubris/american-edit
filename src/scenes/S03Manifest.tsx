@@ -1,23 +1,29 @@
 // 3. MANIFEST DESTINY — 1805. The map draws itself; Louisiana floods in;
 // Lewis & Clark's canoe travels to the Pacific; waves crash; the Alamo inset;
 // wagons roll west; states fill to the Pacific.
-import { Sequence, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Sequence, useCurrentFrame } from "remotion";
 import { Camera, Layer } from "../components/Camera";
 import { InkDraw, Trail } from "../components/InkDraw";
-import { Paper } from "../components/Parchment";
-import { Dust, Embers, Fog, Smoke, Sparks } from "../components/Particles";
-import { Birds, Clouds, EngravedSky, Sun } from "../components/Sky";
-import { CrashWave, InkSea } from "../components/Water";
+import { Dust } from "../components/Particles";
 import { Canoe, MapBase, MapCues, MapWagon, Ship } from "../components/MapScene";
+import * as THREE from "three";
+import { GLShot, GL, driveCamera, drawIn } from "../gl/GLShot";
+import { makeSky } from "../gl/sky";
+import { makeGround, makeReeds, makeWater, makeBirds } from "../gl/env";
+import { makeFigure } from "../gl/figure";
+import { terrain } from "../gl/geo";
+import { fbm2, ridged2 } from "../gl/noise";
+import { emit, Glows, Puff, Puffs, Smoke } from "../gl/particles";
+import { makeTree } from "../gl/models/civilwar";
+import { makeAlamo, makeOx, seaStackGeo, wagonGeo } from "../gl/models/west";
 import { YearSlam } from "../components/YearSlam";
 import { Quote } from "../components/WordPop";
 import { QUOTES } from "../quotes";
-import { alamoItems, oxBody, pine, pioneerBody, rock, wagonBody } from "../art/west";
-import { F, grass, groundHatch, HT, L, wheel } from "../art/kit";
-import { hatch, polyD, Pt, rectP, smoothD, ellipseP } from "../lib/engrave";
+import { F, L } from "../art/kit";
+import { polyD, rectP, smoothD, ellipseP } from "../lib/engrave";
 import { clamp, easeInOut, lerp, memo, ramp, TAU } from "../lib/math";
 import { usePalette } from "../lib/palette";
-import { hash, noise2 } from "../lib/random";
+import { hash } from "../lib/random";
 import { useUid } from "../lib/uid";
 import { along, getUSMap, LEWIS_CLARK, OREGON_TRAIL, PLACES } from "../lib/usmap";
 import { DISPLAY_FAMILY, ITALIC_FAMILY } from "../fonts";
@@ -62,7 +68,10 @@ const MapShot: React.FC<{ at: number; cam: (sf: number, canoe: { x: number; y: n
   const canoe = lc.at(trailP);
   const cm = cam(sf, canoe);
   const oP = ramp(sf, OREGON0, OREGON1, easeInOut);
+  const tilt = 16 + Math.sin(sf / 90) * 4;
   return (
+    <AbsoluteFill style={{ perspective: 1500, perspectiveOrigin: "50% 30%", backgroundColor: pal.paperDark, overflow: "hidden" }}>
+    <AbsoluteFill style={{ transform: `rotateX(${tilt}deg) scale(1.28) translateY(-40px)`, transformOrigin: "50% 60%" }}>
     <Camera keys={[{ f: 0, x: cm.x, y: cm.y, z: cm.z }]} handheld={3} seed={30 + at}>
       <Layer depth={1}>
         <Sequence from={-at} layout="none">
@@ -111,113 +120,183 @@ const MapShot: React.FC<{ at: number; cam: (sf: number, canoe: { x: number; y: n
         <Dust count={36} speed={0.4} color="inkSoft" size={2.2} seed={`md${at}`} opacity={0.5} />
       </Layer>
     </Camera>
+    </AbsoluteFill>
+    <AbsoluteFill style={{ background: `linear-gradient(to bottom, ${pal.paperDark} 0%, rgba(0,0,0,0) 22%)` }} />
+    </AbsoluteFill>
   );
 };
 
 const centerOn = (p: { x: number; y: number }, z: number): Cam => ({ x: p.x - 960, y: p.y - 540, z });
 
-// D. "Ocian in view!": bluff with two explorers, sea stacks, breakers, gulls
-const PacificShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const geo = memo("md:pacific", () => {
-    const stack1: Pt[] = [[1160, 760], [1170, 560], [1200, 470], [1250, 440], [1290, 470], [1310, 580], [1330, 760]];
-    const stack2: Pt[] = [[1380, 740], [1395, 620], [1420, 590], [1450, 610], [1470, 740]];
-    const cliff: Pt[] = [[1500, 1200], [1520, 760], [1560, 600], [1600, 420], [1700, 330], [1900, 300], [2400, 280], [2400, 1200]];
-    const pines = [...pine(1640, 420, 180, "p1"), ...pine(1740, 340, 220, "p2"), ...pine(1860, 320, 200, "p3"), ...pine(1990, 310, 240, "p4"), ...pine(2120, 300, 210, "p5")];
-    const bluff: Pt[] = [[-500, 1200], [-500, 560], [-100, 540], [260, 560], [460, 600], [600, 700], [700, 900], [740, 1200]];
-    return {
-      stacks: [...rock(stack1, "st1", false), ...rock(stack2, "st2", false)],
-      cliff: rock(cliff, "cliff", false),
-      pines,
-      bluff: [...rock(bluff, "bluff", true), HT(grass(-480, 520, (x) => 548 + Math.max(0, x - 260) * 0.2, "bg", 0.12, 26), 1.5, 0.9)],
-    };
+// D. "Ocian in view!": the party on a headland above the Pacific; sea stacks,
+// breakers rolling in, gulls wheeling
+const pacificSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.7, 0.3, -0.6).normalize();
+  sh.uSunCol.value.set(1.2, 1.0, 0.8);
+  sh.uSky.value.set(0.5, 0.52, 0.6);
+  sh.uGround.value.set(0.3, 0.28, 0.24);
+  g.camera.far = 5000;
+  const sky = makeSky(sh, { top: "#6d8aae", horizon: "#f0dfc0", bottom: "#8a8a80", glow: 1, sunSize: 0.05, rays: 0.9, rayCount: 28, lines: 0.7, lineSpacing: 4, clouds: 0.35, cloudSpeed: 0.05, cloudCol: "#fff4e0", cloudShade: "#9a9098", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [150, 3000, 0.5], fogCol: "#eadcc2" });
+  const sea = makeWater(g, { w: 4000, d: 4000, res: 240, y: 0, color: "#4e6470", sky: "#c8d0d4", amp: 1.4, freq: 0.08, speed: 1.1, lineSpacing: 4 });
+  g.scene.add(sea.mesh);
+  // headland: grassy bluff dropping to the sea
+  const bluffH = (x: number, z: number) => Math.max(-6, 38 - Math.max(0, -z - 20) * 1.4 + (fbm2(x * 0.02, z * 0.02, 5, 3) - 0.5) * 14 - Math.max(0, x - 60) * 0.3);
+  const bluff = new THREE.Mesh(terrain(400, 400, 200, 200, bluffH), g.ink({ color: "#8a8458", mode: "screen", angle: 30, scale: 3.4, cross: 0.6, shade: 1, frag: "albedo = mix(albedo, vec3(0.62, 0.55, 0.45), smoothstep(0.75, 0.45, N.y));" }));
+  bluff.position.set(0, 0, 140);
+  g.scene.add(bluff);
+  const stackM = g.ink({ color: "#6e645a", mode: "screen", angle: 70, scale: 3.4, cross: 0.8, shade: 1 });
+  [
+    [-60, -120, 55, 16],
+    [30, -200, 70, 20],
+    [-140, -260, 40, 12],
+    [90, -320, 48, 14],
+    [-20, -420, 30, 10],
+  ].forEach(([x, z, h, r], i) => {
+    const m = new THREE.Mesh(seaStackGeo(i * 3 + 1, h, r), stackM);
+    m.position.set(x, -4, z);
+    g.scene.add(m);
   });
-  return (
-    <Camera keys={[{ f: 0, z: 1.02, x: 40 }, { f: 60, z: 1.12, x: -40, y: -10 }]} handheld={4} seed={33}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.25} />
-        <Sun x={600} y={330} r={60} spin={0.2} />
-        <Clouds speed={1.5} clouds={[{ x: 200, y: 100, w: 500, h: 130, seed: "pc1" }, { x: 1000, y: 40, w: 420, h: 110, seed: "pc2" }]} />
-      </Layer>
-      <Layer depth={0.35}>
-        <InkSea top={470} rows={40} amp={12} speed={1.2} drift={0.5} seed="pac" />
-        <Birds x0={-100} y0={300} x1={2000} y1={200} dur={70} count={6} size={18} seed="gulls" />
-      </Layer>
-      <Layer depth={0.7}>
-        <InkDraw items={geo.stacks} start={0} dur={18} />
-        {[1245, 1425].map((x, i) => (
-          <path key={i} d={`M${x - 110} ${755 - i * 16}q${55} ${-20 - 12 * Math.sin(f / 5 + i)} 110 0q55 ${-20 - 12 * Math.sin(f / 6 + i)} 110 0`} fill="none" stroke={pal.foam} strokeWidth={6} opacity={0.9} />
-        ))}
-        <CrashWave x={900} y={900} w={900} h={260} period={44} seed="cw1" />
-        <Sparks x={1250} y={740} t0={Math.floor(f / 22) * 22} count={16} speed={9} life={16} gravity={0.5} color="foam" seed={`sp${Math.floor(f / 22)}`} width={3} />
-      </Layer>
-      <Layer depth={0.9}>
-        <InkDraw items={geo.cliff} start={2} dur={16} />
-        <InkDraw items={geo.pines} start={8} dur={18} />
-      </Layer>
-      <Layer depth={1.3}>
-        <InkDraw items={geo.bluff} start={0} dur={14} />
-        <g fill={pal.ink}>
-          <g transform="translate(330 566) scale(1.6)">
-            <path d="M-14 0L-10 -60Q0 -80 10 -60L14 0Z" />
-            <circle cx={0} cy={-74} r={10} />
-            <path d="M-16 -80Q0 -96 16 -80L10 -76Q0 -84 -10 -76Z" />
-            <path d={`M8 -56L${40} ${-66 - Math.sin(f / 10) * 3}`} stroke={pal.ink} strokeWidth={5} strokeLinecap="round" />
-          </g>
-          <g transform="translate(220 560) scale(1.6)">
-            <path d="M-14 0L-12 -56Q0 -76 12 -56L14 0Z" />
-            <circle cx={0} cy={-70} r={10} />
-            <path d="M-3 -58L-3 -130" stroke={pal.ink} strokeWidth={4} />
-          </g>
-        </g>
-      </Layer>
-      <Layer depth={1.6}>
-        <Fog y={900} h={200} speed={2} opacity={0.4} seed="pfog" />
-      </Layer>
-    </Camera>
-  );
+  const grass = makeReeds(g, { count: 3000, x: [-12, 12], z: [120, 140], y: (x, z) => bluffH(x, z - 140), h: [0.3, 0.9], w: 0.02, color: "#7a7a48", seed: "pgrass", sway: 0.4, wind: 2.5, edges: 0 });
+  g.scene.add(grass.mesh);
+  // Clark, Lewis and York on the headland, looking out to sea
+  const party = [0, 1, 2].map((i) => {
+    const fig = makeFigure(g, i === 1 ? "colonial" : "frock", { color: { coat: ["#4a3a2a", "#3a4050", "#5a4a38"][i], hat: "#2a2018" }, mat: { rim: 1.2, rimCol: "#ffe6c0" } });
+    const x = -2 + i * 1.6;
+    const z = 128 - i * 0.8;
+    fig.root.position.set(x, bluffH(x, z - 140), z);
+    fig.root.rotation.y = Math.PI + 0.15 * (i - 1);
+    g.scene.add(fig.root);
+    return fig;
+  });
+  const foam = new Puffs(sh, 500, { lit: "#ffffff", shade: "#c0c8cc", outline: 0.25, hatch: 0.3, lineSpacing: 4, soft: 0.45, rough: 0.45 });
+  g.scene.add(foam.mesh);
+  const birds = makeBirds(g, { count: 8, from: [-80, 50, 60], to: [60, 60, -40], spread: [30, 10, 20], size: 1.4, dur: 3.5, seed: "gulls2" });
+  g.scene.add(birds.mesh);
+  return (f: number, t: number) => {
+    party.forEach((fig, i) => fig.pose(i === 0 ? { rSh: [2.6, 0.5, 0], rEl: 0.3, lSh: [0.1, 0.15, 0], neck: 0.1 } : i === 1 ? { lSh: [0.3, 0.2, 0], rSh: [0.6, 0.2, 0], rEl: 1.2, neck: 0.05 } : { lSh: [0.1, 0.15, 0], rSh: [0.1, 0.15, 0], neck: 0.08, headYaw: -0.2 }));
+    const fl: Puff[] = [];
+    [[-60, -120, 16], [30, -200, 20], [-140, -260, 12], [90, -320, 14]].forEach(([x, z, r], k) => {
+      for (let i = 0; i < 40; i++) {
+        const ph = (t * 0.5 + hash(i, k) + k * 0.3) % 1;
+        const a = hash(i, k, 2) * Math.PI * 2;
+        fl.push({ x: x + Math.cos(a) * (r + ph * 6), y: Math.sin(ph * Math.PI) * 10 * hash(i, k, 3), z: z + Math.sin(a) * (r + ph * 6), size: 2 + ph * 5, alpha: Math.sin(ph * Math.PI) * 0.9, seed: i });
+      }
+    });
+    for (let i = 0; i < 160; i++) {
+      const ph = (t * 0.35 + hash(i, 40)) % 1;
+      fl.push({ x: (hash(i, 41) - 0.5) * 300, y: 0.8, z: 60 - ph * 40, size: 2 + hash(i, 42) * 3, alpha: Math.sin(ph * Math.PI) * 0.7, seed: i });
+    }
+    foam.set(fl, g.camera);
+    birds.update(t);
+    const gy = bluffH(0, -10);
+    driveCamera(g, [{ f: 0, pos: [-3.5, gy + 2.2, 134], look: [2, gy - 6, 60], fov: 46 }, { f: 60, pos: [-2.5, gy + 2.0, 132.5], look: [3, gy - 8, 50], fov: 46 }], f, 0.006, 31);
+  };
 };
 
-// E. A breaker crashes right at the camera
-const CrashShot: React.FC = () => {
-  const f = useCurrentFrame();
-  return (
-    <Camera keys={[{ f: 0, z: 1.05 }, { f: 45, z: 1.18, y: 30 }]} handheld={7} seed={34}>
-      <Layer depth={0.15}>
-        <Paper />
-        <EngravedSky h={800} y={-300} dark={0.3} />
-        <Clouds speed={2.5} clouds={[{ x: 300, y: 60, w: 600, h: 150, seed: "cc1" }, { x: 1300, y: 20, w: 420, h: 120, seed: "cc2" }]} />
-      </Layer>
-      <Layer depth={0.5}>
-        <InkSea top={420} rows={38} amp={18} speed={1.8} drift={1.2} seed="crashsea" />
-      </Layer>
-      <Layer depth={1}>
-        <CrashWave x={820} y={1120} w={1900} h={760} phase={0.28 + (f / 45) * 0.7} seed="big" />
-        <Sparks x={1300} y={640} t0={22} count={60} speed={22} life={24} gravity={0.7} color="foam" seed="bigspray" width={4} spread={Math.PI * 1.4} />
-        <Smoke x={1400} y={700} count={10} start={24} life={30} size={120} spread={7} vx={4} vy={-2} shade={0} color="foam" outline={1} seed="spraypuff" />
-      </Layer>
-      <Layer depth={1.8}>
-        {f > 26 &&
-          Array.from({ length: 22 }, (_, i) => {
-            const a = f - 26 - hash(i, 3) * 6;
-            if (a < 0) return null;
-            const x = hash(i, 1) * 1920;
-            const y = hash(i, 2) * 1080;
-            return <circle key={i} cx={x} cy={y + a * 2} r={8 + hash(i, 4) * 30} fill="#fffaf0" opacity={Math.max(0, 0.5 - a * 0.03)} />;
-          })}
-      </Layer>
-    </Camera>
-  );
+// E. A breaker explodes against the rocks right in front of the camera
+const crashSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.5, 0.4, -0.7).normalize();
+  sh.uSunCol.value.set(1.2, 1.0, 0.8);
+  sh.uSky.value.set(0.5, 0.52, 0.6);
+  sh.uGround.value.set(0.3, 0.3, 0.3);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#6d8aae", horizon: "#f0dfc0", bottom: "#8a8a80", glow: 0.9, rays: 0.8, lines: 0.7, lineSpacing: 4, clouds: 0.4, cloudSpeed: 0.08, cloudCol: "#fff4e0", cloudShade: "#9a9098", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [100, 2000, 0.5], fogCol: "#eadcc2" });
+  const sea = makeWater(g, { w: 1000, d: 1000, res: 260, y: 0, color: "#3e5462", sky: "#c0c8cc", amp: 1.2, freq: 0.14, speed: 1.4, lineSpacing: 3.5 });
+  g.scene.add(sea.mesh);
+  const rockM = g.ink({ color: "#5a524a", mode: "screen", angle: 70, scale: 3.4, cross: 0.8, shade: 1, rim: 0.4 });
+  [[0, 0, 13, 3.2], [-8, -5, 10, 2.6], [7, -3, 8, 2.2], [3, 8, 4, 2.4], [-4, 6, 3, 1.8]].forEach(([x, z, h, r], i) => {
+    const m = new THREE.Mesh(seaStackGeo(i * 5 + 2, h, r), rockM);
+    m.position.set(x, -2, z);
+    g.scene.add(m);
+  });
+  const spray = new Smoke(g, 400, { color: "#fbfcfc", hatch: 0.6, rim: 1, shade: 0.4 });
+  g.scene.add(spray.mesh);
+  const mist = new Puffs(sh, 300, { lit: "#ffffff", shade: "#c8d0d4", outline: 0.15, hatch: 0.25, lineSpacing: 4, soft: 0.6, rough: 0.4 });
+  g.scene.add(mist.mesh);
+  const drops = new Glows(sh, 200, "#e8f0f4", 0.8);
+  g.scene.add(drops.mesh);
+  const HIT = 24 / 30;
+  return (f: number, t: number) => {
+    const sp: Puff[] = [];
+    const ms: Puff[] = [];
+    const dr: Puff[] = [];
+    const a = t - HIT;
+    if (a > 0) {
+      for (let i = 0; i < 260; i++) {
+        const age = a - hash(i, 1) * 0.12;
+        if (age < 0) continue;
+        const ang = (hash(i, 2) - 0.5) * 2.4;
+        const v = 6 + hash(i, 3) * 12;
+        const up = 8 + hash(i, 4) * 16;
+        const y = 2 + up * age - 4.9 * age * age;
+        if (y < -1) continue;
+        const p = { x: Math.sin(ang) * v * age, y, z: 4 + Math.cos(ang) * v * age * 0.6, size: 0.4 + age * 2.2, alpha: Math.max(0, 1 - age / 1.8), seed: hash(i, 5) * 9 };
+        if (i < 140) sp.push(p);
+        else if (i < 220) ms.push({ ...p, size: p.size * 2.5, alpha: p.alpha * 0.6 });
+        else dr.push({ ...p, size: 0.08, alpha: p.alpha, stretch: 2 });
+      }
+    }
+    // the swell rolling in before the hit
+    for (let i = 0; i < 120; i++) {
+      const x = (hash(i, 9) - 0.5) * 40;
+      const k = Math.min(1, t / HIT);
+      ms.push({ x, y: 0.8 + k * 2.5, z: 30 - k * 24 + hash(i, 10) * 3, size: 1.5 + hash(i, 11) * 2, alpha: a > 0 ? Math.max(0, 0.8 - a) : 0.8, seed: i });
+    }
+    spray.set(sp);
+    mist.set(ms, g.camera);
+    drops.set(dr, g.camera);
+    driveCamera(g, [{ f: 0, pos: [6, 6.5, -20], look: [0, 5, 4], fov: 52 }, { f: 45, pos: [5, 7.2, -18], look: [0, 6.5, 4], fov: 54 }], f, 0.02, 32);
+  };
 };
 
-// F. Framed inset: the Alamo facade draws itself while smoke drifts past
+// F. The Alamo's facade inside an ornate oval frame; smoke drifting past
+const alamoSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.6, 0.4, 0.7).normalize();
+  sh.uSunCol.value.set(1.25, 1.0, 0.72);
+  sh.uSky.value.set(0.5, 0.5, 0.55);
+  sh.uGround.value.set(0.32, 0.28, 0.22);
+  g.camera.far = 2000;
+  const sky = makeSky(sh, { top: "#7a8aa0", horizon: "#f0d8b0", bottom: "#a08a6a", glow: 0.7, rays: 0.5, lines: 0.7, lineSpacing: 4, clouds: 0.35, cloudSpeed: 0.08, cloudCol: "#fbf0dc", cloudShade: "#9a8a80", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [60, 800, 0.4], fogCol: "#e4d4b4" });
+  const ground = makeGround(g, { size: 800, res: 120, y: 0, amp: 1, freq: 0.05, color: "#b8a078", mat: { mode: "stipple", hatch: 0.8 } });
+  g.scene.add(ground.mesh);
+  const al = makeAlamo(g);
+  g.scene.add(al.group);
+  const trees = [makeTree(g, "at1", 11, 6), makeTree(g, "at2", 9, 5)];
+  trees[0].group.position.set(24, 0, -26);
+  trees[1].group.position.set(-44, 0, -24);
+  trees.forEach((tr) => g.scene.add(tr.group));
+  const smoke = new Smoke(g, 200, { color: "#e8e2d8", hatch: 0.8 });
+  g.scene.add(smoke.mesh);
+  const embers = new Glows(sh, 80, "#ffb060", 1);
+  g.scene.add(embers.mesh);
+  g.enableShadows(2048, 30, 80);
+  return (f: number, t: number) => {
+    drawIn(al.mats, f, -2, 30, 0.3);
+    const sm: Puff[] = [];
+    emit({ at: [20, 7, -8], rate: 9, life: 8, vel: [-4, 1.3, 0], spread: 0.6, size: [1.2, 4.5], drag: 0.3, alpha: 0.9, seed: 3, prewarm: 8, jitter: [2, 2, 3] }, t, sm);
+    smoke.set(sm);
+    const em: Puff[] = [];
+    for (let i = 0; i < 60; i++) {
+      const u = (hash(i, 1) + t * 0.25) % 1;
+      em.push({ x: -10 + hash(i, 2) * 30 - u * 6, y: u * 10, z: 4 + hash(i, 3) * 8, size: 0.06, alpha: Math.sin(u * Math.PI) });
+    }
+    embers.set(em, g.camera);
+    driveCamera(g, [{ f: 0, pos: [6, 3, 34], look: [0, 6, 0], fov: 40 }, { f: 75, pos: [3, 2.6, 28], look: [0, 6.5, 0], fov: 40 }], f, 0.005, 33);
+  };
+};
+
 const AlamoShot: React.FC = () => {
   const f = useCurrentFrame();
   const pal = usePalette();
-  const uid = useUid("al");
-  const alamo = memo("md:alamo", () => alamoItems(960, 740));
   const frame = memo("md:alframe", () => {
     const outer = ellipseP(960, 520, 690, 430, 90);
     const inner = ellipseP(960, 520, 660, 405, 90);
@@ -237,135 +316,109 @@ const AlamoShot: React.FC = () => {
       L(polyD(rectP(740, 70, 440, 50)), 1.2),
     ];
   });
+  const clip = `path('${polyD(ellipseP(960, 520, 662, 407, 90))}')`;
   return (
-    <Camera keys={[{ f: 0, z: 0.98 }, { f: 75, z: 1.14, y: -20 }]} handheld={3} seed={35}>
-      <Layer depth={0.5}>
-        <g transform="translate(960 540) scale(3.2) translate(-760 -760)">
-          <MapBase cues={{ border: -999, sea: -999, land: -999, original: -999, louisiana: -999, rivers: -999, labels: -999, allFilled: false }} showCartouche={false} />
-        </g>
-        <rect x={-400} y={-400} width={2720} height={1900} fill={pal.paper} opacity={0.55} />
-      </Layer>
-      <Layer depth={1}>
-        <defs>
-          <clipPath id={`${uid}c`}>
-            <path d={polyD(ellipseP(960, 520, 662, 407, 90))} />
-          </clipPath>
-        </defs>
-        <g clipPath={`url(#${uid}c)`}>
-          <rect x={200} y={0} width={1600} height={1100} fill={pal.paper} />
-          <EngravedSky x={200} y={90} w={1600} h={740} dark={0.35} seed="alsky" />
-          <Clouds speed={1.8} span={[100, 1900]} clouds={[{ x: 400, y: 200, w: 380, h: 100, seed: "ac1" }, { x: 1200, y: 170, w: 300, h: 90, seed: "ac2" }]} />
-          <path d={groundHatch(200, 1800, 740, 960, "algnd")} stroke={pal.ink} strokeWidth={1} opacity={0.6} />
-          <InkDraw items={alamo} start={0} dur={40} overlap={0.2} hatchAt={22} washAt={26} />
-          <Smoke x={1700} y={560} rate={0.3} life={90} size={90} vx={-6} vy={-0.6} spread={1.2} shade={0.75} seed="alsmoke" opacity={0.8} />
-          <Smoke x={1800} y={760} rate={0.25} life={90} size={110} vx={-7} vy={-0.4} spread={1.2} shade={0.85} seed="alsmoke2" opacity={0.7} />
-          <Embers x={1200} y={900} w={900} count={40} rise={2.5} seed="alemb" />
-        </g>
-        <InkDraw items={frame} start={0} dur={20} />
-        <text x={960} y={107} textAnchor="middle" fontFamily={DISPLAY_FAMILY} fontWeight={800} fontSize={32} letterSpacing={7} fill={pal.ink} opacity={ramp(f, 14, 26)}>
-          THE ALAMO · MDCCCXXXVI
-        </text>
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={30} seed="aldust" speed={0.4} />
-      </Layer>
-    </Camera>
+    <AbsoluteFill>
+      <Camera keys={[{ f: 0, z: 0.98 }, { f: 75, z: 1.06, y: -10 }]} handheld={2} seed={35}>
+        <Layer depth={0.5}>
+          <g transform="translate(960 540) scale(3.2) translate(-760 -760)">
+            <MapBase cues={{ border: -999, sea: -999, land: -999, original: -999, louisiana: -999, rivers: -999, labels: -999, allFilled: false }} showCartouche={false} />
+          </g>
+          <rect x={-400} y={-400} width={2720} height={1900} fill={pal.paper} opacity={0.55} />
+        </Layer>
+      </Camera>
+      <AbsoluteFill style={{ clipPath: clip }}>
+        <GLShot setup={alamoSetup} />
+      </AbsoluteFill>
+      <Camera keys={[{ f: 0, z: 1 }]} seed={36}>
+        <Layer depth={1}>
+          <InkDraw items={frame} start={0} dur={20} />
+          <text x={960} y={107} textAnchor="middle" fontFamily={DISPLAY_FAMILY} fontWeight={800} fontSize={32} letterSpacing={7} fill={pal.ink} opacity={ramp(f, 14, 26)}>
+            THE ALAMO · MDCCCXXXVI
+          </text>
+        </Layer>
+      </Camera>
+    </AbsoluteFill>
   );
 };
 
-// G. Wagons roll west: turning wheels, plodding oxen, dust trailing behind
-const WagonShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const geo = memo("md:wagons", () => {
-    const peaks = Array.from({ length: 26 }, (_, i) => ({ px: -600 + i * 125 + hash(i, 51) * 80, h: 90 + hash(i, 52) * 230, sl: 0.9 + hash(i, 53) * 0.8 }));
-    const mount: Pt[] = [[-600, 560]];
-    for (let x = -600; x <= 2600; x += 18) {
-      let ridge = 0;
-      for (const pk of peaks) ridge = Math.max(ridge, pk.h - Math.abs(x - pk.px) * pk.sl);
-      mount.push([x, 500 - ridge + noise2(x / 30, 1, 3) * 8]);
-    }
-    mount.push([2600, 560]);
-    const snow: string[] = [];
-    for (let i = 1; i < mount.length - 2; i++) {
-      const [x, y] = mount[i];
-      if (y < 300 && i % 2 === 0) snow.push(`M${x - 22} ${y + 30}L${x - 8} ${y + 18}L${x} ${y + 26}L${x + 10} ${y + 16}L${x + 24} ${y + 34}`);
-    }
-    const prairie: Pt[] = [[-600, 1400], [-600, 500]];
-    for (let x = -600; x <= 2600; x += 60) prairie.push([x, 500 + Math.sin(x / 300) * 16]);
-    prairie.push([2600, 1400]);
-    return {
-      mount: [F(polyD(mount), "skyDeep", 0.35), HT(hatch([mount], { angle: 70, spacing: 3.6, tone: (x, y) => 0.25 + (y - 200) / 500 + (Math.sin(x / 60) > 0 ? 0.25 : 0), threshold: 0.45, seed: "mt" }), 1, 0.65), L(polyD(mount.slice(1, -1), false), 1.8), L(snow.join(""), 3, { color: "paper" })],
-      prairie: [F(polyD(prairie), "sand", 0.6), HT(groundHatch(-600, 2600, 510, 1300, "pr", 7), 1, 0.6), L(smoothD(prairie.slice(2, -1)), 2)],
-      ruts: L("M-600 745C200 735 900 755 2600 745M-600 775C200 765 900 785 2600 775", 2.2, { op: 0.7 }),
-      wagon: wagonBody(),
-      bigWheel: wheel(62, 14),
-      smallWheel: wheel(46, 12),
-      ox: oxBody(),
-      person: pioneerBody(),
-      fgrass: grass(-600, 2600, 1000, "fgr", 0.08, 70),
-    };
-  });
-  const speed = 4.2;
-  const dist = f * speed;
-  const wagons = [0, 1, 2].map((i) => {
-    const s = 1.2 - i * 0.3;
-    const baseX = 860 + i * 620 - dist * s;
-    const y = 760 - i * 90;
-    const bob = Math.sin(f / 5 + i) * 2;
-    return (
-      <g key={i} transform={`translate(${baseX} ${y + bob}) scale(${s})`}>
-        <Smoke x={220} y={-10} rate={0.35} life={40} size={60} vx={1.5} vy={-0.8} spread={1.2} shade={0.1} color="sand" outline={1} seed={`wd${i}`} opacity={0.75} />
-        {[-120, 120].map((wx, k) => (
-          <g key={k} transform={`translate(${wx} ${wx > 0 ? -62 : -46}) rotate(${(-dist / (wx > 0 ? 62 : 46)) * 57.3})`}>
-            <InkDraw items={wx > 0 ? geo.bigWheel : geo.smallWheel} start={-10} dur={4} washAt={0} washDur={2} />
-          </g>
-        ))}
-        <InkDraw items={geo.wagon} start={-2 + i * 3} dur={14} hatchAt={8} washAt={8} />
-        {[-420, -640].map((ox, k) => (
-          <g key={k} transform={`translate(${ox} 0)`}>
-            {[0, 1, 2, 3].map((leg) => {
-              const lx = [-110, -80, 70, 100][leg];
-              const sw = Math.sin(f * 0.35 + leg * Math.PI * 0.5 + k) * 16;
-              return <path key={leg} d={`M${lx} -60l${Math.sin((sw * Math.PI) / 180) * 50} 58`} stroke={pal.ink} strokeWidth={9} strokeLinecap="round" />;
-            })}
-            <InkDraw items={geo.ox} start={i * 3} dur={12} />
-          </g>
-        ))}
-        {i === 0 && (
-          <g transform={`translate(-260 ${Math.abs(Math.sin(f / 4)) * -4})`}>
-            {[0, 1].map((leg) => (
-              <path key={leg} d={`M0 -40l${Math.sin(f * 0.35 + leg * Math.PI) * 14} 40`} stroke={pal.ink} strokeWidth={6} strokeLinecap="round" />
-            ))}
-            <InkDraw items={geo.person} start={0} dur={10} />
-          </g>
-        )}
-      </g>
-    );
-  });
-  return (
-    <Camera keys={[{ f: 0, z: 1.08, x: 80 }, { f: 70, z: 1.12, x: -120 }]} handheld={4} seed={36}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.28} />
-        <Clouds speed={1} clouds={[{ x: 100, y: 60, w: 520, h: 140, seed: "wc1" }, { x: 1000, y: 110, w: 420, h: 110, seed: "wc2" }, { x: 1700, y: 30, w: 380, h: 100, seed: "wc3" }]} />
-      </Layer>
-      <Layer depth={0.25}>
-        <InkDraw items={geo.mount} start={0} dur={14} />
-      </Layer>
-      <Layer depth={0.6}>
-        <InkDraw items={geo.prairie} start={0} dur={10} />
-        <InkDraw items={[geo.ruts]} start={2} dur={10} />
-      </Layer>
-      <Layer depth={1}>{wagons.slice().reverse()}</Layer>
-      <Layer depth={1.7}>
-        <g transform={`translate(${((f * speed * 1.7) % 400) - 200} 0)`}>
-          <path d={geo.fgrass} fill="none" stroke={pal.ink} strokeWidth={2.4} strokeLinecap="round" opacity={0.85} />
-        </g>
-        <Dust count={40} speed={1.5} color="inkSoft" seed="wdust" size={2.6} />
-      </Layer>
-    </Camera>
+// G. The wagon train rolls west: turning wheels, plodding oxen, dust, the Rockies
+const wagonSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.8, 0.3, -0.5).normalize();
+  sh.uSunCol.value.set(1.3, 1.0, 0.7);
+  sh.uSky.value.set(0.5, 0.5, 0.58);
+  sh.uGround.value.set(0.34, 0.28, 0.2);
+  g.camera.far = 8000;
+  const sky = makeSky(sh, { top: "#6a86ae", horizon: "#f2d6a8", bottom: "#a08a68", glow: 1, sunSize: 0.05, rays: 0.8, rayCount: 26, lines: 0.7, lineSpacing: 4, clouds: 0.35, cloudSpeed: 0.05, cloudCol: "#fff0d8", cloudShade: "#9a8a86", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [300, 6000, 0.55], fogCol: "#eadcc0" });
+  const plain = makeGround(g, { size: 4000, res: 160, y: 0, amp: 8, freq: 0.004, color: "#b0a070", mat: { mode: "stipple", hatch: 0.8 } });
+  g.scene.add(plain.mesh);
+  const rockies = new THREE.Mesh(
+    terrain(9000, 2000, 300, 100, (x, z) => Math.max(0, ridged2(x * 0.0012, z * 0.0015, 6, 7) * 1500 - 350) * Math.min(1, (1000 - Math.abs(z)) / 600)),
+    g.ink({ color: "#8a8a9a", mode: "screen", angle: 40, scale: 3.4, cross: 0.7, shade: 1, frag: "albedo = mix(albedo, vec3(0.97, 0.97, 1.0), smoothstep(700.0, 900.0, vWorld.y) * smoothstep(0.3, 0.7, N.y));" }),
   );
+  rockies.position.set(0, -20, -3200);
+  g.scene.add(rockies);
+  const W = wagonGeo();
+  const woodM = g.ink({ color: "#6a4e34", mode: "screen", angle: 70, scale: 3.4, rim: 0.5 });
+  const canvasM = g.ink({ color: "#efe6d0", mode: "screen", angle: 80, scale: 3.4, cross: 0.4, rim: 0.7, side: THREE.DoubleSide, frag: "extraInk += smoothstep(0.42, 0.5, abs(fract(vUv.y * 5.0) - 0.5)) * 0.4;" });
+  const wheelM = g.ink({ color: "#5a4230", mode: "screen", angle: 60, scale: 3.4 });
+  const train = [0, 1, 2, 3].map((i) => {
+    const wg = new THREE.Group();
+    wg.add(new THREE.Mesh(W.wood, woodM), new THREE.Mesh(W.canvas, canvasM));
+    const wheels: THREE.Mesh[] = [];
+    for (const [x, z, big] of [
+      [0.75, 1.2, 0],
+      [-0.75, 1.2, 0],
+      [0.75, -1.3, 1],
+      [-0.75, -1.3, 1],
+    ] as [number, number, number][]) {
+      const w = new THREE.Mesh(big ? W.bigWheel : W.wheel, wheelM);
+      w.position.set(x, big ? 0.75 : 0.6, z);
+      wg.add(w);
+      wheels.push(w);
+    }
+    const oxen = [0, 1, 2, 3].map((k) => {
+      const ox = makeOx(g, k % 2 ? "#6a4e34" : "#7a6048");
+      ox.root.position.set(k % 2 ? 0.6 : -0.6, 0, 4.2 + Math.floor(k / 2) * 2.6);
+      ox.root.scale.setScalar(0.85);
+      wg.add(ox.root);
+      return ox;
+    });
+    const walker = makeFigure(g, "frock", { color: { coat: "#4a3a2a" } });
+    walker.root.position.set(1.5, 0, 5);
+    wg.add(walker.root);
+    wg.rotation.y = -Math.PI / 2 + 0.25;
+    g.scene.add(wg);
+    return { wg, wheels, oxen, walker, off: i * 16 };
+  });
+  const dust = new Puffs(sh, 400, { lit: "#f0dcb4", shade: "#b09a78", outline: 0.15, hatch: 0.3, lineSpacing: 4, soft: 0.6, rough: 0.4 });
+  g.scene.add(dust.mesh);
+  return (f: number, t: number) => {
+    const speed = 1.5;
+    const ds: Puff[] = [];
+    train.forEach((w, i) => {
+      const d = t * speed - w.off;
+      const dir = new THREE.Vector3(Math.cos(0.25), 0, -Math.sin(0.25));
+      w.wg.position.set(-d * dir.x * -1 * -1, 0, -d * dir.z);
+      w.wg.position.set(-(t * speed) * 1 + i * -15, 0, i * 4);
+      w.wheels.forEach((wh, k) => (wh.rotation.x = (t * speed) / (k >= 2 ? 0.75 : 0.6)));
+      w.oxen.forEach((ox, k) => ox.walk(t * 3.2 + k * 0.7));
+      const ph = t * 4 + i;
+      w.walker.pose({ lHip: [Math.sin(ph) * 0.4, 0.05], rHip: [-Math.sin(ph) * 0.4, 0.05], lKn: Math.max(0, -Math.sin(ph)) * 0.6, rKn: Math.max(0, Math.sin(ph)) * 0.6, lSh: [-Math.sin(ph) * 0.3, 0.1, 0], rSh: [Math.sin(ph) * 0.3, 0.1, 0] });
+      const p = w.wg.position;
+      emit({ at: [p.x + 2, 0.3, p.z], rate: 12, life: 2.5, vel: [1.5, 0.5, 0.3], spread: 0.6, size: [0.4, 2.4], drag: 0.6, alpha: 0.4, seed: 10 + i, prewarm: 3, jitter: [1.5, 0.2, 1.5] }, t, ds);
+    });
+    dust.set(ds, g.camera);
+    driveCamera(g, [{ f: 0, pos: [2, 2.4, 22], look: [-16, 2.2, 2], fov: 44 }, { f: 60, pos: [-2, 2.6, 21], look: [-20, 2.4, 2], fov: 44 }], f, 0.01, 34);
+  };
+};
+
+const shot = (setup: (g: GL) => (f: number, t: number) => void) => {
+  const C: React.FC = () => <GLShot setup={setup} />;
+  return <C />;
 };
 
 const m0 = () => getUSMap();
@@ -417,10 +470,10 @@ export const manifest: SceneDef = {
       enter: "whip",
       name: "fly west",
     },
-    { from: c(7), dur: c(9) - c(7), el: <PacificShot />, enter: "ink", origin: [300, 700], name: "pacific" },
-    { from: c(9), dur: c(10.5) - c(9), el: <CrashShot />, enter: "punch", name: "crash" },
+    { from: c(7), dur: c(9) - c(7), el: shot(pacificSetup), enter: "ink", origin: [300, 700], name: "pacific" },
+    { from: c(9), dur: c(10.5) - c(9), el: shot(crashSetup), enter: "punch", name: "crash" },
     { from: c(10.5), dur: c(13) - c(10.5), el: <AlamoShot />, enter: "burn", origin: [1700, 200], name: "alamo" },
-    { from: c(13), dur: c(15) - c(13), el: <WagonShot />, enter: "morph", name: "wagons" },
+    { from: c(13), dur: c(15) - c(13), el: shot(wagonSetup), enter: "morph", name: "wagons" },
     {
       from: c(15),
       dur: c(17) - c(15),
