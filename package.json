@@ -7,13 +7,20 @@
     "dev": "remotion studio",
     "render": "remotion render HistoryEdit out/history-edit.mp4",
     "render:test": "remotion render Test1776 out/test.mp4",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "beats": "node scripts/beats.mjs",
+    "textures": "remotion still TexPaper assets/textures/paper.jpg --image-format=jpeg --jpeg-quality=88 && for s in 0 1 2 3; do remotion still TexGrain$s assets/textures/grain$s.png; done",
+    "motion-check": "node scripts/motion-check.mjs",
+    "render:preview": "remotion render HistoryEdit out/preview.mp4 --scale=0.6667 --crf=26"
   },
   "dependencies": {
     "@remotion/cli": "4.0.528",
+    "d3-geo": "3.1.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "remotion": "4.0.528"
+    "remotion": "4.0.528",
+    "topojson-client": "3.1.0",
+    "us-atlas": "3.0.1"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

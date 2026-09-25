@@ -1,5 +1,5 @@
-import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
-import { SERIF_FAMILY } from "../fonts";
+import { AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { ITALIC_FAMILY, SERIF_FAMILY } from "../fonts";
 
 type Props = {
   text: string;
@@ -63,5 +63,72 @@ export const WordPop: React.FC<Props> = ({
         );
       })}
     </div>
+  );
+};
+
+// A quote over artwork: soft dark gradient, words popping in, then the speaker
+// and year underneath. Exits with a quick ink-bleed dissolve at `end`.
+export const Quote: React.FC<{
+  text: string;
+  by: string;
+  start: number;
+  end: number;
+  framesPerWord?: number;
+  fontSize?: number;
+  maxWidth?: number;
+  position?: "bottom" | "center" | "top";
+}> = ({ text, by, start, end, framesPerWord = 4, fontSize = 68, maxWidth = 1500, position = "bottom" }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  if (frame < start - 2 || frame > end) return null;
+  const words = text.split(" ");
+  const inP = interpolate(frame, [start - 2, start + 8], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const out = interpolate(frame, [end - 8, end], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.in(Easing.cubic) });
+  const attrStart = start + words.length * framesPerWord + 3;
+  const attr = spring({ frame: frame - attrStart, fps, config: { damping: 16, stiffness: 160, mass: 0.7 } });
+  const justify = position === "bottom" ? "flex-end" : position === "top" ? "flex-start" : "center";
+  const grad =
+    position === "bottom"
+      ? "linear-gradient(to top, rgba(12,7,2,0.82) 0%, rgba(12,7,2,0.6) 32%, rgba(12,7,2,0) 62%)"
+      : position === "top"
+        ? "linear-gradient(to bottom, rgba(12,7,2,0.82) 0%, rgba(12,7,2,0.6) 32%, rgba(12,7,2,0) 62%)"
+        : "radial-gradient(ellipse 60% 45% at 50% 50%, rgba(12,7,2,0.75), rgba(12,7,2,0) 80%)";
+  return (
+    <AbsoluteFill>
+      <AbsoluteFill style={{ background: grad, opacity: inP * (1 - out) }} />
+      <AbsoluteFill
+        style={{
+          justifyContent: justify,
+          alignItems: "center",
+          padding: position === "center" ? 0 : "90px 0",
+          opacity: 1 - out,
+          filter: out > 0 ? `blur(${out * 10}px)` : undefined,
+          transform: `scale(${1 + out * 0.06})`,
+        }}
+      >
+        <WordPop
+          text={`“${text}”`}
+          startFrame={start}
+          framesPerWord={framesPerWord}
+          fontSize={fontSize}
+          maxWidth={maxWidth}
+        />
+        <div
+          style={{
+            marginTop: 22,
+            fontFamily: ITALIC_FAMILY,
+            fontWeight: 400,
+            fontSize: Math.round(fontSize * 0.46),
+            letterSpacing: 1.5,
+            color: "#f3e3c3",
+            opacity: attr,
+            transform: `translateY(${(1 - attr) * 16}px)`,
+            textShadow: "0 2px 12px rgba(0,0,0,0.8)",
+          }}
+        >
+          {`– ${by}`}
+        </div>
+      </AbsoluteFill>
+    </AbsoluteFill>
   );
 };

@@ -1,5 +1,7 @@
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
-import { SERIF_FAMILY } from "../fonts";
+import { DISPLAY_FAMILY, SERIF_FAMILY } from "../fonts";
+import { clamp, TAU } from "../lib/math";
+import { hash } from "../lib/random";
 
 const FALL_FRAMES = 5;
 const FLASH_FRAMES = 12;
@@ -15,6 +17,11 @@ type Props = {
   moveFrames?: number;
   moveToY?: number;
   moveToScale?: number;
+  display?: boolean; // engraved Cinzel instead of the serif
+  exitAt?: number; // frame the year bursts away
+  splatter?: boolean; // ink splatter on impact
+  scrim?: number; // dark halo behind the year (0..1)
+  flash?: boolean;
 };
 
 // Big text that falls from oversized into place, with a white flash and screen shake on impact
@@ -26,6 +33,11 @@ export const YearSlam: React.FC<Props> = ({
   moveFrames = 15,
   moveToY = 0,
   moveToScale = 1,
+  display = false,
+  exitAt,
+  splatter = false,
+  scrim = 0,
+  flash: showFlash = true,
 }) => {
   const frame = useCurrentFrame();
   const impact = startFrame + FALL_FRAMES;
@@ -66,8 +78,50 @@ export const YearSlam: React.FC<Props> = ({
   const moveY = moveProgress * moveToY;
   const moveScale = 1 + moveProgress * (moveToScale - 1);
 
+  // Exit: the year punches forward and bleeds away
+  const ex = exitAt === undefined ? 0 : clamp((frame - exitAt) / 8);
+  if (ex >= 1) return null;
+  const exScale = 1 + Easing.in(Easing.cubic)(ex) * 0.6;
+  // Slow settle drift while holding so the year never sits dead still
+  const hold = Math.max(0, frame - impact);
+  const drift = 1 + hold * 0.0025;
+
+  const splats: React.ReactNode[] = [];
+  if (splatter && frame >= impact) {
+    const a = frame - impact;
+    const grow = Easing.out(Easing.cubic)(clamp(a / 6));
+    for (let i = 0; i < 38; i++) {
+      const ang = hash(i, 3) * TAU;
+      const dist = (fontSize * 0.9 + hash(i, 4) * fontSize * 1.6) * grow;
+      const r = 3 + hash(i, 5) * hash(i, 6) * 26;
+      splats.push(
+        <circle
+          key={i}
+          cx={960 + Math.cos(ang) * dist * 1.5}
+          cy={540 + Math.sin(ang) * dist * 0.75}
+          r={r * (0.6 + 0.4 * grow)}
+          fill="#1d1208"
+          opacity={0.85 * (1 - ex)}
+        />,
+      );
+    }
+  }
+
   return (
     <AbsoluteFill>
+      {scrim > 0 && (
+        <AbsoluteFill
+          style={{
+            background: `radial-gradient(ellipse 50% 42% at 50% 50%, rgba(10,6,2,${0.75 * scrim}), rgba(10,6,2,0) 75%)`,
+            opacity: fallOpacity * (1 - ex),
+          }}
+        />
+      )}
+      {splats.length > 0 && (
+        <AbsoluteFill style={{ transform: `translate(${shakeX}px, ${shakeY}px)` }}>
+          <svg width={1920} height={1080}>{splats}</svg>
+        </AbsoluteFill>
+      )}
       <AbsoluteFill
         style={{
           justifyContent: "center",
@@ -77,20 +131,22 @@ export const YearSlam: React.FC<Props> = ({
       >
         <div
           style={{
-            fontFamily: SERIF_FAMILY,
-            fontWeight: 700,
+            fontFamily: display ? DISPLAY_FAMILY : SERIF_FAMILY,
+            fontWeight: display ? 800 : 700,
             fontSize,
             lineHeight: 1,
             color: "white",
-            opacity: fallOpacity,
-            transform: `scale(${fallScale * moveScale})`,
-            textShadow: "0 8px 40px rgba(0, 0, 0, 0.6)",
+            letterSpacing: display ? fontSize * 0.02 : 0,
+            opacity: fallOpacity * (1 - ex),
+            filter: ex > 0 ? `blur(${ex * 14}px)` : undefined,
+            transform: `scale(${fallScale * moveScale * exScale * drift})`,
+            textShadow: "0 8px 40px rgba(0, 0, 0, 0.6), 0 0 4px rgba(0,0,0,0.5)",
           }}
         >
           {text}
         </div>
       </AbsoluteFill>
-      <AbsoluteFill style={{ backgroundColor: "white", opacity: flash }} />
+      {showFlash && <AbsoluteFill style={{ backgroundColor: "white", opacity: flash }} />}
     </AbsoluteFill>
   );
 };

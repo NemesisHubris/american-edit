@@ -6,3 +6,24 @@ import { Config } from "@remotion/cli/config";
 Config.setPublicDir("./assets");
 Config.setVideoImageFormat("jpeg");
 Config.setOverwriteOutput(true);
+
+// Remotion's esbuild loader can't read tsconfig.json with TypeScript 7, so it
+// would fall back to classic JSX (React.createElement). Force the automatic
+// runtime so JSX works everywhere, including at module level.
+Config.overrideWebpackConfig((config) => ({
+  ...config,
+  module: {
+    ...config.module,
+    rules: (config.module?.rules ?? []).map((rule) => {
+      if (!rule || typeof rule !== "object" || !Array.isArray(rule.use)) return rule;
+      return {
+        ...rule,
+        use: rule.use.map((u) =>
+          u && typeof u === "object" && typeof u.loader === "string" && u.loader.includes("esbuild-loader")
+            ? { ...u, options: { ...(u.options as object), jsx: "automatic" } }
+            : u,
+        ),
+      };
+    }),
+  },
+}));
