@@ -160,6 +160,7 @@ export const makeFigure = (g: GL, costume: Costume, o: { scale?: number; mat?: I
   };
 
   const extra: THREE.RawShaderMaterial[] = [];
+  const extraH = extra;
   const root = new THREE.Group();
   const pelvis = grp(root, [0, HIP_H, 0]);
   // torso
@@ -217,6 +218,10 @@ export const makeFigure = (g: GL, costume: Costume, o: { scale?: number; mat?: I
       mesh(new THREE.SphereGeometry(0.135, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), m.hat, head, [0, 0.03, 0], [0, 0, 0], [1, 0.9, 1.1]);
       mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.01, 20), m.hat, head, [0, 0.025, 0.01]);
       mesh(new THREE.BoxGeometry(0.34, 0.42, 0.18), m.gear, chest, [0, -0.02, -0.19]); // pack
+    } else if (costume === "civilian") {
+      const hairM = g.ink({ ...base, color: o.color?.hat ?? "#2a1d14" });
+      mesh(new THREE.SphereGeometry(0.106, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.55), hairM, head, [0, 0.03, -0.012], [-0.35, 0, 0], [0.97, 1.1, 1.08]);
+      extraH.push(hairM);
     } else if (costume === "worker") {
       mesh(new THREE.SphereGeometry(0.11, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.45), m.hat, head, [0, 0.06, 0]);
       mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.01, 12, 1, false, -0.8, 1.6), m.hat, head, [0, 0.06, 0.1]);

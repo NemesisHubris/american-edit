@@ -1,516 +1,526 @@
 // 9. THE HYPE — fastest cuts, one shot per beat, all in full colour: Earthrise,
 // the Wall falls, circuits, computers, the network map, the smartphone, jets,
-// Mount Rushmore, the Grand Canyon, fireworks.
-import { AbsoluteFill, useCurrentFrame } from "remotion";
-import { Camera, Layer } from "../components/Camera";
-import { InkDraw } from "../components/InkDraw";
-import { Paper } from "../components/Parchment";
-import { Dust, Fireworks, Smoke, Sparks, Burst } from "../components/Particles";
-import { Birds, Clouds, EngravedSky, Stars, Sun } from "../components/Sky";
-import { InkSea } from "../components/Water";
-import { MapBase } from "../components/MapScene";
+// Mount Rushmore, the Grand Canyon, fireworks over the city.
+import * as THREE from "three";
 import { Quote } from "../components/WordPop";
 import { QUOTES } from "../quotes";
-import { circuitGeo, computerItems, jetD, mesaLayer, Phone3D, rushmoreItems, skylineGeo, WALL_BOT, WALL_TOP, wallItems } from "../art/modern";
-import { earthItems } from "../art/saturn";
-import { pine } from "../art/west";
-import { F, HT, L } from "../art/kit";
-import { ellipseP, hatch, polyD, Pt, smoothD, stipple } from "../lib/engrave";
-import { clamp, easeInOut, easeOut, lerp, memo, ramp, TAU } from "../lib/math";
-import { usePalette } from "../lib/palette";
-import { hash, rng } from "../lib/random";
-import { getUSMap, PLACES } from "../lib/usmap";
 import { sceneClock } from "../timeline";
+import { hash, rng } from "../lib/random";
+import { PLACES, getUSMap } from "../lib/usmap";
+import { GLShot, GL, driveCamera } from "../gl/GLShot";
+import { makeSky } from "../gl/sky";
+import { lunarSet } from "../gl/sets/moon";
+import { makeEarth } from "../gl/models/space";
+import { makeCRT, makeJet, makePCB, makePhone, wallMaterial, wallSegmentGeo } from "../gl/models/modern";
+import { makeCanyon, makePines, makeRushmore, makeSkyline, makeUSMap, riverX, rushmoreHeight } from "../gl/models/landmarks";
+import { makeFigure, Pose } from "../gl/figure";
+import { box } from "../gl/geo";
+import { emit, Glows, Puff, Puffs, Smoke } from "../gl/particles";
 import type { SceneDef } from "./types";
 
 const c = sceneClock("hype");
-const Instant = { start: -30, dur: 2, hatchAt: 0, washAt: 0, washDur: 1 };
+const T = (f: number) => f / 30;
 
-// 1. Earth rising over the lunar horizon
-const EarthriseShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const earth = memo("hy:earth", () => earthItems(170));
-  const limb = memo("hy:limb", () => {
-    const disc = ellipseP(960, 3300, 2600, 2520, 160);
-    const r = rng("limb");
-    const craters: string[] = [];
-    for (let i = 0; i < 26; i++) {
-      const x = r() * 2400 - 240;
-      const y = 820 + r() * 300;
-      const rx = 20 + r() * 90;
-      craters.push(polyD(ellipseP(x, y, rx, rx * 0.22, 24)));
-    }
-    return [F(polyD(disc), "moon", 1), HT(hatch([disc], { angle: 0, spacing: 5, tone: (_, y) => 0.25 + (y - 780) / 700, threshold: 0.35, seed: "lmb" }), 1, 0.5), L(craters.join(""), 1.6), HT(stipple([disc], { count: 1500, seed: "lmbs", bbox: [-300, 760, 2220, 1100] }), 2, 0.5), L(polyD(disc), 3)];
-  });
-  const y = 900 - easeOut(clamp(f / 30)) * 260;
-  return (
-    <Camera keys={[{ f: 0, z: 1.1 }, { f: 30, z: 1.22, y: -20 }]} handheld={4} seed={91}>
-      <Layer depth={0.05}>
-        <rect x={-400} y={-400} width={2720} height={1900} fill={pal.space} />
-        <Stars count={160} seed="erstars" />
-      </Layer>
-      <Layer depth={0.3}>
-        <circle cx={1060} cy={y} r={260} fill={pal.sky} opacity={0.25} />
-        <g transform={`translate(1060 ${y}) rotate(${f * 0.3})`}>
-          <InkDraw items={earth} {...Instant} />
-        </g>
-      </Layer>
-      <Layer depth={1}>
-        <InkDraw items={limb} {...Instant} />
-      </Layer>
-    </Camera>
-  );
+// 1. Earth rising over the lunar horizon, the camera skimming the surface
+const earthriseSetup = (g: GL) => {
+  lunarSet(g, { sun: [0.55, 0.22, 0.6], seed: "earthrise" });
+  const earth = makeEarth(g, 70);
+  (earth.mat.uniforms.uSunDir as THREE.IUniform) = { value: new THREE.Vector3(-0.8, 0.3, 0.5).normalize() };
+  earth.mesh.rotation.set(0.3, 1.3, 0);
+  g.scene.add(earth.mesh);
+  return (f: number) => {
+    driveCamera(g, [{ f: 0, pos: [0, 3.2, 90], look: [0, 14, -200], fov: 34 }, { f: 30, pos: [0, 2.8, 50], look: [0, 18, -200], fov: 32 }], f, 0.004, 1);
+    earth.mesh.position.set(40, -40 + f * 2.4, -800);
+    earth.mesh.rotation.y = 1.3 + f * 0.004;
+  };
 };
 
-// 2-3. The Berlin Wall cracks, then crumbles in falling chunks
-const chunkGeo = () => {
-  const r = rng("chunks");
-  const cols = 4;
-  const rows = 6;
-  const x0 = 700;
-  const x1 = 1220;
-  const y0 = WALL_TOP;
-  const y1 = WALL_BOT;
-  const V: Pt[][] = [];
-  for (let i = 0; i <= cols; i++) {
-    V.push([]);
-    for (let j = 0; j <= rows; j++) {
-      const inner = i > 0 && i < cols && j > 0 && j < rows;
-      V[i].push([x0 + ((x1 - x0) * i) / cols + (inner ? (r() - 0.5) * 60 : 0), y0 + ((y1 - y0) * j) / rows + (inner ? (r() - 0.5) * 50 : 0)]);
+// 2/3. The Berlin Wall: people on top, cracks spread, then a section bursts apart
+const WALL_N = 16;
+const crowdPoses: Pose[] = [
+  { lSh: [2.6, 0.3, 0], rSh: [2.7, 0.2, 0], lEl: 0.2, rEl: 0.3 },
+  { lSh: [2.9, 0.1, 0], rSh: [0.3, 0.2, 0], lEl: 0.1, rEl: 0.4, lean: 0.1 },
+  { lSh: [1.2, 1.2, 0], rSh: [1.3, 1.1, 0], lEl: 1.4, rEl: 1.2 },
+  { lSh: [2.4, 0.5, 0], rSh: [2.2, 0.6, 0], lEl: 0.5, rEl: 0.6, neck: -0.3 },
+];
+const wallSetup = (crumble: boolean) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.45, 0.35, 0.85).normalize(); // low warm light raking the painted face
+  sh.uSunCol.value.set(1.15, 0.92, 0.7);
+  sh.uSky.value.set(0.35, 0.4, 0.55);
+  sh.uGround.value.set(0.2, 0.18, 0.18);
+  g.camera.far = 1500;
+  const sky = makeSky(sh, { top: "#1d2c52", horizon: "#f09a5a", bottom: "#2a2322", glow: 1.1, sunSize: 0.07, rays: 1, rayCount: 30, lines: 0.5, lineSpacing: 4, paper: 0.05, stars: 0.3, sunDir: new THREE.Vector3(0.3, 0.06, -1).normalize() });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [60, 500, 0.4], fogCol: "#d39a74" });
+  const seg = wallSegmentGeo();
+  const mat = wallMaterial(g, "wall1");
+  const group = new THREE.Group();
+  g.scene.add(group);
+  const x0 = -(WALL_N * 1.2) / 2;
+  const breakIdx = [7, 8, 9];
+  const chunks: { mesh: THREE.Mesh; v: THREE.Vector3; w: THREE.Vector3; t0: number; p0: THREE.Vector3 }[] = [];
+  for (let i = 0; i < WALL_N; i++) {
+    const x = x0 + i * 1.2 + 0.6;
+    if (crumble && breakIdx.includes(i)) {
+      // pre-fractured slab: 3 x 6 jagged pieces
+      for (let a = 0; a < 3; a++)
+        for (let b = 0; b < 6; b++) {
+          const w = 0.4;
+          const h = 0.6;
+          const geo = box(w * (0.9 + hash(i, a, b) * 0.2), h * (0.9 + hash(b, a, i) * 0.2), 0.22);
+          const p = geo.attributes.position as THREE.BufferAttribute;
+          for (let k = 0; k < p.count; k++) p.setXYZ(k, p.getX(k) + (hash(k, a, b + i) - 0.5) * 0.08, p.getY(k) + (hash(k, b, a + i) - 0.5) * 0.08, p.getZ(k));
+          geo.computeVertexNormals();
+          const m = new THREE.Mesh(geo, mat);
+          const pos = new THREE.Vector3(x - 0.4 + a * 0.4, 0.3 + b * 0.6, 0);
+          m.position.copy(pos);
+          group.add(m);
+          const t0 = 0.15 + (5 - b) * 0.03 + hash(a, b, i) * 0.1;
+          chunks.push({ mesh: m, p0: pos, t0, v: new THREE.Vector3((hash(a, b, 1) - 0.5) * 3, 1 + hash(a, b, 2) * 2, 3 + hash(a, b, 3) * 5), w: new THREE.Vector3(hash(a, b, 4) * 6 - 3, hash(a, b, 5) * 6 - 3, hash(a, b, 6) * 6 - 3) });
+        }
+      continue;
+    }
+    for (const gg of [seg.slab, seg.foot, seg.pipe]) {
+      const m = new THREE.Mesh(gg, mat);
+      m.position.x = x;
+      group.add(m);
     }
   }
-  const chunks: { pts: Pt[]; c: Pt; d: number; spin: number; vx: number }[] = [];
-  for (let i = 0; i < cols; i++)
-    for (let j = 0; j < rows; j++) {
-      const pts = [V[i][j], V[i + 1][j], V[i + 1][j + 1], V[i][j + 1]];
-      const cx = pts.reduce((a, p) => a + p[0], 0) / 4;
-      const cy = pts.reduce((a, p) => a + p[1], 0) / 4;
-      chunks.push({ pts, c: [cx, cy], d: (rows - j) * 1.5 + r() * 3, spin: (r() - 0.5) * 12, vx: (cx - 960) * 0.04 + (r() - 0.5) * 4 });
-    }
-  const hole = polyD([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
-  return { chunks, hole };
-};
-
-const WallShot: React.FC<{ crumble?: boolean }> = ({ crumble }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const wall = memo("hy:wall", wallItems);
-  const geo = memo("hy:chunks", chunkGeo);
-  const crack = memo("hy:crack", () => {
-    const r = rng("wcrack");
-    const lines: string[] = [];
-    for (let k = 0; k < 9; k++) {
-      const a = (k / 9) * TAU + r() * 0.4;
-      const pts: Pt[] = [[960, 600]];
-      let x = 960;
-      let y = 600;
-      for (let s = 0; s < 7; s++) {
-        x += Math.cos(a + (r() - 0.5) * 0.9) * (30 + r() * 40);
-        y += Math.sin(a + (r() - 0.5) * 0.9) * (30 + r() * 40);
-        pts.push([x, y]);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), g.ink({ color: "#6b6560", mode: "stipple", hatch: 0.8 }));
+  g.scene.add(ground);
+  // crowd on top of the wall and in front
+  const figs: { fig: ReturnType<typeof makeFigure>; base: Pose; ph: number }[] = [];
+  const r = rng("crowd");
+  for (let i = 0; i < 9; i++) {
+    const fig = makeFigure(g, "civilian", { color: { coat: ["#3a3f55", "#5a2e2a", "#2e4a3a", "#4a4035", "#23252c"][i % 5] } });
+    const onTop = i < 6;
+    const x = onTop ? x0 + 1 + r() * (WALL_N * 1.2 - 2) : -6 + r() * 12;
+    if (onTop && x > -2.4 && x < 2.4 && crumble) continue;
+    fig.root.position.set(x, onTop ? 4.05 : 0, onTop ? 0 : 3 + r() * 3);
+    fig.root.rotation.y = onTop ? (r() - 0.5) * 0.8 : Math.PI + (r() - 0.5) * 0.6;
+    g.scene.add(fig.root);
+    figs.push({ fig, base: crowdPoses[i % crowdPoses.length], ph: r() * 6 });
+  }
+  const dust = new Smoke(g, 160, { color: "#d8cfc0" });
+  g.scene.add(dust.mesh);
+  const sparks = new Glows(sh, 80, "#ffe0a0", 0.8);
+  g.scene.add(sparks.mesh);
+  return (f: number, t: number) => {
+    if (crumble) driveCamera(g, [{ f: 0, pos: [3.5, 1.4, 9], look: [0, 2.2, 0], fov: 50 }, { f: 30, pos: [2.2, 1.2, 7.6], look: [0, 2.0, 0], fov: 50 }], f, 0.02, 3);
+    else driveCamera(g, [{ f: 0, pos: [-9, 1.7, 7.5], look: [-1, 3, 0], fov: 46 }, { f: 15, pos: [-7.6, 1.8, 6.8], look: [-1, 3.1, 0], fov: 45 }], f, 0.02, 2);
+    (mat.uniforms.uCrack as THREE.IUniform).value = crumble ? 1 : Math.min(1, 0.2 + t * 1.8);
+    for (const ch of chunks) {
+      const a = t - ch.t0;
+      if (a <= 0) {
+        ch.mesh.position.copy(ch.p0).add(new THREE.Vector3(Math.sin(t * 60 + ch.t0 * 50) * 0.01, 0, 0));
+        continue;
       }
-      lines.push(polyD(pts, false));
+      ch.mesh.position.set(ch.p0.x + ch.v.x * a, Math.max(0.12, ch.p0.y + ch.v.y * a - 4.9 * a * a), ch.p0.z + ch.v.z * a);
+      ch.mesh.rotation.set(ch.w.x * a, ch.w.y * a, ch.w.z * a);
     }
-    return lines;
+    figs.forEach(({ fig, base, ph }) => {
+      const b = Math.sin(t * 9 + ph);
+      fig.pose({ ...base, lSh: [base.lSh![0] + b * 0.15, base.lSh![1], 0], rSh: [base.rSh![0] - b * 0.15, base.rSh![1], 0], crouch: Math.max(0, b) * 0.04 });
+    });
+    const d: Puff[] = [];
+    if (crumble) emit({ at: [0, 1.5, 0.3], rate: 80, life: 1.2, vel: [0, 0.6, 2.5], spread: 1.4, size: [0.2, 0.9], drag: 1.5, alpha: 0.9, start: 0.15, seed: 5, jitter: [1.2, 1.5, 0.1] }, t, d);
+    dust.set(d);
+    const sp: Puff[] = [];
+    if (!crumble)
+      for (let i = 0; i < 40; i++) {
+        const born = hash(i, 3) * 0.5;
+        const age = t - born;
+        if (age < 0 || age > 0.3) continue;
+        sp.push({ x: -1 + hash(i, 4) * 2, y: 1 + hash(i, 5) * 2 + age * 3 - 4.9 * age * age, z: 0.2 + age * 4, size: 0.04, alpha: 1 - age / 0.3, stretch: 2 });
+      }
+    sparks.set(sp, g.camera);
+  };
+};
+
+// 4/5. Circuit board: light racing along traces; macro glide over a chip
+const circuitSetup = (macro: boolean) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.3, 0.8, 0.4).normalize();
+  sh.uSunCol.value.set(0.8, 0.85, 0.9);
+  sh.uSky.value.set(0.2, 0.25, 0.3);
+  sh.uGround.value.set(0.05, 0.08, 0.06);
+  g.camera.far = 300;
+  g.camera.near = 0.05;
+  const sky = makeSky(sh, { top: "#05070a", horizon: "#0a1614", bottom: "#05070a", glow: 0, rays: 0, lines: 0, paper: 0 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [20, 60, 0.9], fogCol: "#061210" });
+  const pcb = makePCB(g, 40);
+  g.scene.add(pcb.group);
+  return (f: number) => {
+    if (macro) driveCamera(g, [{ f: 0, pos: [-6, 1.2, 4], look: [2, 0, -2], fov: 50 }, { f: 15, pos: [-3.5, 0.9, 2.6], look: [4, 0, -3], fov: 50 }], f, 0.005, 4);
+    else driveCamera(g, [{ f: 0, pos: [-12, 3.5, 10], look: [0, 0, -4], fov: 55 }, { f: 15, pos: [-4, 2.4, 6], look: [8, 0, -6], fov: 55 }], f, 0.005, 5);
+    pcb.board.uniforms.uPulse.value = T(f) * 1.6 + (macro ? 0.4 : 0);
+  };
+};
+
+// 6. Vintage computers flicker on to READY.
+const computersSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.5, 0.6, 0.6).normalize();
+  sh.uSunCol.value.set(0.9, 0.85, 0.75);
+  sh.uSky.value.set(0.3, 0.3, 0.35);
+  sh.uGround.value.set(0.2, 0.17, 0.15);
+  g.camera.far = 100;
+  g.camera.near = 0.05;
+  const sky = makeSky(sh, { top: "#1a1714", horizon: "#2b241e", bottom: "#1a1714", glow: 0, rays: 0, lines: 0.4, lineSpacing: 4, paper: 0 });
+  g.scene.add(sky.mesh);
+  const desk = new THREE.Mesh(box(6, 0.08, 1.6, 0, -0.04, 0.2), g.ink({ color: "#7a5a3a", mode: "world", dir: [1, 0, 0.1], scale: 20, cross: 0.6 }));
+  g.scene.add(desk);
+  const wallM = g.ink({ color: "#a7967a", mode: "world", dir: [0, 1, 0], scale: 8 });
+  g.scene.add(new THREE.Mesh(box(12, 5, 0.1, 0, 1.5, -0.8), wallM));
+  const comps = [
+    makeCRT(g, ["**** COMMODORE 64 BASIC V2 ****", "64K RAM SYSTEM  38911 BASIC BYTES FREE", "", "READY."], "crt1", "#8fb8ff"),
+    makeCRT(g, ["]RUN", "HELLO, WORLD", "", "READY."], "crt2", "#7dff9a"),
+    makeCRT(g, ["C:\\>DIR", "AUTOEXEC BAT", "COMMAND  COM", "C:\\>_"], "crt3", "#ffb84a"),
+  ];
+  comps.forEach((cmp, i) => {
+    cmp.group.position.set(-1.7 + i * 1.7, 0, i === 1 ? 0.15 : 0);
+    cmp.group.rotation.y = (1 - i) * 0.25;
+    g.scene.add(cmp.group);
   });
-  const cp = crumble ? 1 : ramp(f, 2, 12, easeOut);
-  const people = Array.from({ length: 12 }, (_, i) => {
-    const x = -100 + i * 190 + (i > 5 ? 520 : 0);
-    const arm = Math.sin(f / 3 + i) * 20;
-    return (
-      <g key={i} fill={pal.ink} transform={`translate(${x} ${WALL_TOP}) translate(0 ${-Math.abs(Math.sin(f / 4 + i)) * 8})`}>
-        <path d="M-14 0L-10 -70Q0 -84 10 -70L14 0Z" />
-        <circle cx={0} cy={-90} r={13} />
-        <path d={`M-8 -66L${-34} ${-110 - arm}M8 -66L${34} ${-110 + arm}`} stroke={pal.ink} strokeWidth={8} strokeLinecap="round" />
-      </g>
+  sh.uPL0.value.set(0, 0.8, 1.2, 4);
+  return (f: number, t: number) => {
+    driveCamera(g, [{ f: 0, pos: [0.8, 1.0, 3.6], look: [0, 0.55, 0], fov: 42 }, { f: 30, pos: [-0.4, 0.9, 2.9], look: [0, 0.55, 0], fov: 42 }], f, 0.004, 6);
+    comps.forEach((cmp, i) => {
+      const on = t - (0.1 + i * 0.12);
+      const flick = on < 0 ? 0 : on < 0.15 ? (hash(Math.floor(t * 30), i) > 0.4 ? 1 : 0.2) : 1;
+      cmp.screenM.uniforms.uOn.value = flick;
+    });
+    sh.uPLc0.value.setRGB(0.3, 0.5, 0.45);
+  };
+};
+
+// 7. Glowing lines across the U.S. map (extruded states, arcs lifting between cities)
+const netSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.3, 0.8, 0.5).normalize();
+  sh.uSunCol.value.set(0.5, 0.6, 0.8);
+  sh.uSky.value.set(0.15, 0.2, 0.35);
+  sh.uGround.value.set(0.05, 0.05, 0.1);
+  g.camera.far = 800;
+  const sky = makeSky(sh, { top: "#040815", horizon: "#0d1a38", bottom: "#040815", glow: 0, rays: 0, lines: 0.3, lineSpacing: 4, paper: 0, stars: 0.6 });
+  g.scene.add(sky.mesh);
+  const k = 0.1;
+  const mapMat = g.ink({ color: "#1d3b6e", mode: "screen", angle: 30, scale: 4, hatch: 0.6, rim: 0.6, rimCol: "#6aa8ff", emissive: "#0a1d44", emissiveAmt: 0.6 });
+  const states = new THREE.Mesh(makeUSMap(g, k, 1.6, 1.2), mapMat);
+  g.scene.add(states);
+  const map = getUSMap();
+  const hubs = ["newYork", "chicago", "sanFrancisco", "losAngeles", "seattle", "houston", "atlanta", "miami", "denver", "dallas", "washington", "boston", "phoenix", "minneapolis", "detroit", "nashville", "saltLake", "kansasCity"];
+  const P = (n: string) => {
+    const [x, y] = map.proj(PLACES[n]);
+    return new THREE.Vector3((x - 960) * k, 1.7, (y - 560) * k);
+  };
+  const arcMat = new THREE.RawShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uT: { value: 0 } },
+    vertexShader: `precision highp float; in vec3 position; in vec2 uv; uniform mat4 modelMatrix; uniform mat4 viewMatrix; uniform mat4 projectionMatrix; out vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0);} `,
+    fragmentShader: `precision highp float; in vec2 vUv; uniform float uT; layout(location=0) out vec4 o; layout(location=1) out vec4 d;
+      void main(){ float head = uT; float a = vUv.x; if (a > head) discard; float tail = smoothstep(head - 0.5, head, a); float spark = smoothstep(head - 0.04, head, a);
+        o = vec4(vec3(0.35, 0.8, 1.0) * (0.5 + tail) + vec3(1.0) * spark * 1.5, 0.0); d = vec4(0.0); }`,
+  });
+  arcMat.blending = THREE.CustomBlending;
+  arcMat.blendSrc = THREE.OneFactor;
+  arcMat.blendDst = THREE.OneFactor;
+  arcMat.blendSrcAlpha = THREE.ZeroFactor;
+  arcMat.blendDstAlpha = THREE.OneFactor;
+  const arcs: { mat: THREE.RawShaderMaterial; t0: number }[] = [];
+  const r = rng("arcs");
+  for (let i = 0; i < 26; i++) {
+    const a = hubs[Math.floor(r() * hubs.length)];
+    let b = hubs[Math.floor(r() * hubs.length)];
+    if (a === b) b = hubs[(hubs.indexOf(a) + 3) % hubs.length];
+    const A = P(a);
+    const B = P(b);
+    const mid = A.clone().add(B).multiplyScalar(0.5);
+    mid.y += A.distanceTo(B) * 0.35;
+    const curve = new THREE.QuadraticBezierCurve3(A, mid, B);
+    const m = arcMat.clone();
+    const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 60, 0.22, 6), m);
+    g.scene.add(mesh);
+    arcs.push({ mat: m, t0: r() * 0.6 });
+  }
+  const nodes = new Glows(sh, 40, "#bfe8ff", 1.5);
+  g.scene.add(nodes.mesh);
+  return (f: number, t: number) => {
+    driveCamera(g, [{ f: 0, pos: [-40, 55, 95], look: [10, 0, 0], fov: 45 }, { f: 30, pos: [10, 45, 85], look: [20, 0, -5], fov: 45 }], f, 0.004, 7);
+    arcs.forEach((a) => (a.mat.uniforms.uT.value = Math.min(1.5, Math.max(0, (t - a.t0) * 2.2))));
+    nodes.set(
+      hubs.map((h, i) => {
+        const p = P(h);
+        return { x: p.x, y: p.y + 0.3, z: p.z, size: 1.6 + Math.sin(t * 8 + i) * 0.4, alpha: 0.9 };
+      }),
+      g.camera,
     );
-  });
-  return (
-    <Camera keys={[{ f: 0, z: crumble ? 1.05 : 1.12 }, { f: 30, z: crumble ? 1.18 : 1.2 }]} handheld={9} seed={92}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={1400} y={-300} dark={0.3} wash="dawn" />
-        <Sun x={960} y={560} r={80} rays={40} spin={1.5} rayLen={1600} />
-      </Layer>
-      <Layer depth={1}>
-        {crumble ? (
-          <g>
-            <defs>
-              <clipPath id="wallhole" clipRule="evenodd">
-                <path d={`M-600 -600H2600V1600H-600Z${geo.hole}`} clipRule="evenodd" />
-              </clipPath>
-            </defs>
-            <g clipPath="url(#wallhole)">
-              <InkDraw items={wall} {...Instant} />
-            </g>
-            {geo.chunks.map((ch, i) => {
-              const a = Math.max(0, f - ch.d);
-              const dx = ch.vx * a;
-              const dy = 0.9 * a * a;
-              const rot = ch.spin * a;
-              return (
-                <g key={i} transform={`translate(${dx} ${dy}) rotate(${rot} ${ch.c[0]} ${ch.c[1]})`} opacity={a > 26 ? 0 : 1}>
-                  <path d={polyD(ch.pts)} fill={pal.stone} stroke={pal.ink} strokeWidth={3} />
-                  <path d={hatch([ch.pts], { angle: 45, spacing: 5, seed: `ch${i}` })} stroke={pal.ink} strokeWidth={1} opacity={0.6} />
-                  <path d={smoothD(ch.pts.slice(0, 3))} stroke={i % 3 ? pal.flagRed : pal.gold} strokeWidth={9} fill="none" opacity={0.8} />
-                </g>
-              );
-            })}
-            <Smoke x={960} y={900} rate={1.2} life={36} size={140} vx={0} vy={-3} spread={8} shade={0.3} seed="wdust" />
-          </g>
-        ) : (
-          <g>
-            <InkDraw items={wall} {...Instant} />
-            {crack.map((d, i) => (
-              <path key={i} d={d} stroke={pal.ink} strokeWidth={7 - i * 0.3} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - cp} strokeLinejoin="round" />
-            ))}
-            <Sparks x={960} y={600} t0={2} count={40} speed={20} spread={TAU} gravity={0.8} color="stone" seed="wsp" />
-            <Smoke x={960} y={600} count={10} start={2} life={24} size={70} spread={8} shade={0.3} seed="wpuff" />
-          </g>
-        )}
-        {people}
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={60} speed={2.5} color="stone" size={3} seed="wd" />
-      </Layer>
-    </Camera>
-  );
+  };
 };
 
-// 4-5. Circuit board with light racing along the traces
-const CircuitShot: React.FC<{ macro?: boolean }> = ({ macro }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const g = memo("hy:pcb", () => circuitGeo());
-  const board = (
-    <svg width={1920} height={1080} style={{ overflow: "visible" }}>
-      <rect x={-600} y={-600} width={3200} height={2400} fill="#0f4a2a" />
-      <path d={hatch([[[-600, -600], [2600, -600], [2600, 1800], [-600, 1800]]], { angle: 45, spacing: 14, seed: "pcbh" })} stroke="#1c6b3e" strokeWidth={2} />
-      <path d={g.traces.join("")} stroke={pal.gold} strokeWidth={6} fill="none" strokeLinejoin="round" opacity={0.85} />
-      <path d={g.pads} fill={pal.gold} stroke={pal.ink} strokeWidth={1.5} />
-      {g.chips.map((ch, i) => (
-        <g key={i}>
-          <rect x={ch.x} y={ch.y} width={ch.w} height={ch.h} rx={6} fill="#141414" stroke="#000" strokeWidth={3} />
-          <path d={Array.from({ length: Math.floor(ch.w / 18) }, (_, k) => `M${ch.x + 10 + k * 18} ${ch.y}v-14M${ch.x + 10 + k * 18} ${ch.y + ch.h}v14`).join("")} stroke="#c9c9c9" strokeWidth={5} />
-          <text x={ch.x + ch.w / 2} y={ch.y + ch.h / 2 + 8} textAnchor="middle" fontFamily="monospace" fontSize={22} fill="#bbb">
-            {`USA-${1776 + i * 23}`}
-          </text>
-        </g>
-      ))}
-      {g.traces.map((d, i) => {
-        const off = ((f * 0.045 + hash(i, 4)) % 1.2) - 0.1;
-        return (
-          <g key={i}>
-            <path d={d} stroke={pal.glow} strokeWidth={22} fill="none" opacity={0.35} pathLength={1} strokeDasharray="0.1 2" strokeDashoffset={-off} strokeLinecap="round" />
-            <path d={d} stroke="#ffffff" strokeWidth={7} fill="none" pathLength={1} strokeDasharray="0.06 2" strokeDashoffset={-off - 0.02} strokeLinecap="round" />
-          </g>
-        );
-      })}
-    </svg>
-  );
-  return (
-    <Camera keys={[{ f: 0, z: macro ? 1.4 : 1.0, x: macro ? -80 : 0 }, { f: 15, z: macro ? 1.5 : 1.08, x: macro ? 80 : 30 }]} handheld={5} seed={93}>
-      <Layer depth={1} html>
-        <AbsoluteFill style={{ transform: macro ? "perspective(900px) rotateX(52deg) rotateZ(-18deg) scale(1.6)" : "rotate(-4deg) scale(1.1)" }}>{board}</AbsoluteFill>
-      </Layer>
-    </Camera>
-  );
+// 8/9. The smartphone lights up and turns in slow motion
+const phoneSetup = (second: boolean) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.6, 0.5, 0.6).normalize();
+  sh.uSunCol.value.set(1, 1, 1.05);
+  sh.uSky.value.set(0.2, 0.22, 0.3);
+  sh.uGround.value.set(0.05, 0.05, 0.08);
+  g.camera.far = 50;
+  g.camera.near = 0.01;
+  const sky = makeSky(sh, { top: "#0a0c16", horizon: "#1b1f36", bottom: "#07080d", glow: 0, rays: 0, lines: 0.25, lineSpacing: 4, paper: 0 });
+  g.scene.add(sky.mesh);
+  const phone = makePhone(g);
+  g.scene.add(phone.group);
+  const bokeh = new Glows(sh, 40, "#8fa8ff", 0.2);
+  g.scene.add(bokeh.mesh);
+  const bokeh2 = new Glows(sh, 30, "#ff9a7a", 0.2);
+  g.scene.add(bokeh2.mesh);
+  return (f: number, t: number) => {
+    const tt = T(f) + (second ? 1 : 0);
+    phone.group.rotation.set(0.12 + Math.sin(tt * 0.8) * 0.05, -0.9 + tt * 0.55, 0.05);
+    phone.screenM.uniforms.uOn.value = Math.min(1, Math.max(0, (tt - 0.15) / 0.25));
+    if (second) driveCamera(g, [{ f: 0, pos: [0.05, 0.03, 0.14], look: [0, 0.01, 0], fov: 40 }, { f: 30, pos: [0.04, 0.025, 0.12], look: [0, 0.01, 0], fov: 40 }], f, 0.0005, 8);
+    else driveCamera(g, [{ f: 0, pos: [0, 0.01, 0.32], look: [0, 0, 0], fov: 38 }, { f: 30, pos: [0, 0.005, 0.27], look: [0, 0, 0], fov: 38 }], f, 0.0005, 9);
+    const b1: Puff[] = [];
+    const b2: Puff[] = [];
+    for (let i = 0; i < 30; i++) {
+      const p = { x: (hash(i, 1) - 0.5) * 1.4 + t * 0.02, y: (hash(i, 2) - 0.5) * 0.8, z: -0.6 - hash(i, 3) * 0.6, size: 0.03 + hash(i, 4) * 0.05, alpha: 0.25 + 0.15 * Math.sin(t * 2 + i) };
+      (i % 2 ? b1 : b2).push(p);
+    }
+    bokeh.set(b1, g.camera);
+    bokeh2.set(b2, g.camera);
+  };
 };
 
-// 6. Vintage computers power on, screens flickering
-const ComputersShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const comp = memo("hy:comp", computerItems);
-  const units = [
-    { x: 420, s: 0.7, t0: 6 },
-    { x: 1500, s: 0.75, t0: 10 },
-    { x: 960, s: 1.05, t0: 2 },
+// 10/11. Fighter jets streaking overhead with vapour trails
+const jetsSetup = (second: boolean) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.3, 0.7, -0.5).normalize();
+  sh.uSunCol.value.set(1.15, 1.05, 0.9);
+  sh.uSky.value.set(0.45, 0.55, 0.75);
+  sh.uGround.value.set(0.3, 0.28, 0.25);
+  g.camera.far = 5000;
+  const sky = makeSky(sh, { top: "#2d5fa8", horizon: "#b9d3ec", bottom: "#8aa0b0", glow: 0.7, sunSize: 0.04, rays: 0.6, lines: 0.6, lineSpacing: 4, clouds: 0.35, cloudScale: 1.2, cloudHeight: 0.25, cloudCol: "#ffffff", cloudShade: "#9fb0c4", paper: 0.1 });
+  g.scene.add(sky.mesh);
+  const jets = [0, 1, 2, 3].map(() => makeJet(g));
+  jets.forEach((j) => g.scene.add(j.group));
+  const trails = new Puffs(sh, 900, { lit: "#ffffff", shade: "#c2cfdf", outline: 0.08, hatch: 0.2, lineSpacing: 4, soft: 0.6, rough: 0.15 });
+  g.scene.add(trails.mesh);
+  const form: [number, number, number][] = [
+    [0, 0, 0],
+    [-14, -3, -12],
+    [14, -3, -12],
+    [0, -5, -24],
   ];
-  return (
-    <Camera keys={[{ f: 0, z: 1.05 }, { f: 30, z: 1.16, y: -10 }]} handheld={4} seed={94}>
-      <Layer depth={0.2}>
-        <rect x={-400} y={-400} width={2720} height={1900} fill={pal.night} />
-        <path d={hatch([[[-400, -400], [2320, -400], [2320, 1500], [-400, 1500]]], { angle: 40, spacing: 7, seed: "room" })} stroke={pal.inkSoft} strokeWidth={1} opacity={0.5} />
-      </Layer>
-      <Layer depth={1}>
-        <rect x={-400} y={880} width={2720} height={600} fill={pal.wood} />
-        {units.map((u, i) => {
-          const a = f - u.t0;
-          const on = clamp(a / 6);
-          const flick = a > 0 && a < 8 ? (hash(f, i) > 0.4 ? 1 : 0.3) : 1;
-          const [sx0, sy0] = comp.screen[0];
-          return (
-            <g key={i} transform={`translate(${u.x} 900) scale(${u.s})`}>
-              <InkDraw items={comp.items} {...Instant} />
-              {a > 0 && (
-                <g opacity={flick}>
-                  <rect x={sx0 - 10} y={sy0} width={420} height={300 * on} fill="#0b2a12" transform={`translate(0 ${150 * (1 - on)})`} />
-                  <rect x={sx0 - 10} y={sy0 + 150 - 2} width={420} height={4} fill="#b8ffb8" opacity={1 - on} />
-                  {on >= 1 && (
-                    <g fontFamily="monospace" fontSize={30} fill="#7dff7d">
-                      <text x={sx0 + 10} y={sy0 + 50}>READY.</text>
-                      <text x={sx0 + 10} y={sy0 + 95}>{`10 PRINT "USA"`}</text>
-                      <text x={sx0 + 10} y={sy0 + 140}>RUN</text>
-                      {Math.floor(f / 4) % 2 === 0 && <rect x={sx0 + 10} y={sy0 + 160} width={20} height={30} fill="#7dff7d" />}
-                    </g>
-                  )}
-                  <circle cx={0} cy={-500} r={420} fill="#5cff7a" opacity={0.08 * on} />
-                </g>
-              )}
-            </g>
-          );
-        })}
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={40} speed={0.6} color="glow" seed="cdust" />
-      </Layer>
-    </Camera>
-  );
+  return (f: number, t: number) => {
+    const tt = T(f);
+    const speed = 260;
+    // first: from behind the camera, streaking overhead and away; second: side pass, banking
+    const lead = second ? -160 + tt * speed : 60 - tt * speed;
+    const list: Puff[] = [];
+    jets.forEach((j, i) => {
+      const [ox, oy, oz] = form[i];
+      if (second) {
+        const x = lead + oz;
+        j.group.position.set(x, 60 + oy * 0.6, ox * 0.8);
+        j.group.rotation.set(0, Math.PI / 2, 0.35 + Math.sin(tt * 2 + i) * 0.04);
+        for (let k = 0; k < 100; k++) {
+          const back = 4 + k * 1.8;
+          const age = back / speed;
+          for (const s2 of [-4.6, 4.6]) list.push({ x: x - back, y: 60 + oy * 0.6 + age * 3 + s2 * Math.sin(0.35), z: ox * 0.8 + s2 * Math.cos(0.35), size: 0.35 + age * 5, alpha: 0.9 * Math.max(0, 1 - age / 0.9), seed: k * 0.3 + i });
+        }
+      } else {
+        const z = lead - oz;
+        j.group.position.set(ox * 0.9, 34 + oy, z);
+        j.group.rotation.set(0, Math.PI, Math.sin(tt * 1.5 + i) * 0.05);
+        for (let k = 0; k < 80; k++) {
+          const back = 6 + k * 2;
+          const age = back / speed;
+          list.push({ x: ox * 0.9, y: 34 + oy + age * 2, z: z + back, size: 0.6 + age * 7, alpha: 0.85 * Math.max(0, 1 - age / 0.7), seed: k * 0.3 + i });
+        }
+      }
+    });
+    trails.set(list, g.camera);
+    if (second) {
+      g.camera.position.set(-40 + tt * 60, 52, 75);
+      g.camera.lookAt(new THREE.Vector3(lead - 30, 60, 0));
+      g.camera.fov = 42;
+    } else {
+      g.camera.position.set(0, 2, 40);
+      g.camera.lookAt(new THREE.Vector3(0, 60, -60));
+      g.camera.fov = 70;
+    }
+    g.camera.updateProjectionMatrix();
+  };
 };
 
-// 7. Glowing lines spreading across the U.S. map
-const NETWORK: [keyof typeof PLACES, keyof typeof PLACES][] = [
-  ["newYork", "chicago"], ["chicago", "denver"], ["denver", "sanFrancisco"], ["newYork", "washington"], ["washington", "atlanta"], ["atlanta", "houston"], ["houston", "losAngeles"],
-  ["chicago", "minneapolis"], ["minneapolis", "seattle"], ["dallas", "phoenix"], ["phoenix", "losAngeles"], ["atlanta", "miami"], ["boston", "newYork"], ["chicago", "detroit"],
-  ["kansasCity", "denver"], ["saltLake", "sanFrancisco"], ["nashville", "dallas"], ["seattle", "sanFrancisco"], ["denver", "saltLake"], ["kansasCity", "chicago"],
-];
-
-const NetMapShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const m = getUSMap();
-  return (
-    <Camera keys={[{ f: 0, z: 1.0 }, { f: 30, z: 1.1, x: -40 }]} handheld={4} seed={95}>
-      <Layer depth={1}>
-        <MapBase cues={{ border: -99, sea: -99, land: -99, allFilled: true, compass: -99 }} showCartouche={false} />
-        <rect x={-400} y={-400} width={2720} height={1900} fill={pal.night} opacity={0.62} />
-        {NETWORK.map(([a, b], i) => {
-          const pa = m.proj(PLACES[a]);
-          const pb = m.proj(PLACES[b]);
-          const mx = (pa[0] + pb[0]) / 2;
-          const my = (pa[1] + pb[1]) / 2 - Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) * 0.25;
-          const d = `M${pa[0]} ${pa[1]}Q${mx} ${my} ${pb[0]} ${pb[1]}`;
-          const p = ramp(f, i * 0.9, i * 0.9 + 10, easeOut);
-          return (
-            <g key={i}>
-              <path d={d} stroke="#5fd4ff" strokeWidth={14} fill="none" opacity={0.25 * p} pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - p} strokeLinecap="round" />
-              <path d={d} stroke="#e8fbff" strokeWidth={3.5} fill="none" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - p} strokeLinecap="round" />
-            </g>
-          );
-        })}
-        {Object.values(PLACES).map((ll, i) => {
-          const [x, y] = m.proj(ll);
-          const k = ((f / 18 + hash(i, 2)) % 1 + 1) % 1;
-          return (
-            <g key={i}>
-              <circle cx={x} cy={y} r={6} fill={pal.glow} />
-              <circle cx={x} cy={y} r={6 + k * 40} fill="none" stroke={pal.glow} strokeWidth={2} opacity={1 - k} />
-            </g>
-          );
-        })}
-      </Layer>
-    </Camera>
-  );
+// 12/13. Flying past Mount Rushmore
+const rushmoreSetup = (close: boolean) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.55, 0.5, 0.65).normalize();
+  sh.uSunCol.value.set(1.25, 1.1, 0.92);
+  sh.uSky.value.set(0.45, 0.52, 0.65);
+  sh.uGround.value.set(0.35, 0.3, 0.25);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#3f6fb5", horizon: "#d7e3ee", bottom: "#8c8a7a", glow: 0.5, rays: 0.3, lines: 0.6, lineSpacing: 4, clouds: 0.4, cloudScale: 1.3, cloudHeight: 0.2, cloudCol: "#ffffff", cloudShade: "#a0aab8", paper: 0.1 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [250, 2000, 0.5], fogCol: "#c9d6e0" });
+  const rm = makeRushmore(g);
+  g.scene.add(rm.group);
+  const spots: [number, number, number, number][] = [];
+  const r = rng("pines");
+  for (let i = 0; i < 500; i++) {
+    const x = (r() - 0.5) * 500;
+    const z = 12 + r() * 70;
+    spots.push([x, -4 + (r() - 0.5) * 6 + z * 0.2, z, 3 + r() * 4]);
+  }
+  for (let i = 0; i < 160; i++) {
+    const x = (r() - 0.5) * 240;
+    const up = 70 + r() * 30;
+    spots.push([x, up, -20 + rushmoreHeight(x, up) - 2, 2.5 + r() * 2.5]);
+  }
+  const pines = makePines(g, spots);
+  g.scene.add(pines.mesh);
+  if (!close) g.enableShadows(2048, 120, 300);
+  if (g.shadow) g.shadow.center.set(0, 40, 0);
+  return (f: number) => {
+    if (close) driveCamera(g, [{ f: 0, pos: [74, 52, 76], look: [26, 50, 0], fov: 34 }, { f: 15, pos: [60, 50, 70], look: [22, 50, 0], fov: 34 }], f, 0.01, 11);
+    else driveCamera(g, [{ f: 0, pos: [-80, 50, 160], look: [-4, 46, 0], fov: 38 }, { f: 30, pos: [36, 48, 150], look: [-2, 46, 0], fov: 38 }], f, 0.006, 12);
+  };
 };
 
-// 8-9. The smartphone lights up and rotates in slow motion
-const PhoneShot: React.FC<{ second?: boolean }> = ({ second }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const t = clamp(f / 30);
-  const yaw = second ? lerp(-0.28, 0.32, easeInOut(t)) : lerp(-2.2, -0.35, easeInOut(t));
-  const light = second ? 1 : ramp(f, 14, 26, easeOut);
-  const z = second ? lerp(26, 21, t) : lerp(38, 32, t);
-  return (
-    <Camera keys={[{ f: 0, z: 1.0 }]} handheld={3} seed={96}>
-      <Layer depth={0.1} html>
-        <AbsoluteFill style={{ background: "radial-gradient(ellipse at 50% 45%, #25306a 0%, #0b0f28 60%, #04060f 100%)" }} />
-      </Layer>
-      <Layer depth={0.3}>
-        {Array.from({ length: 18 }, (_, i) => {
-          const x = hash(i, 1) * 1920 + Math.sin(f / 20 + i) * 20;
-          const y = hash(i, 2) * 1080 - f * (0.5 + hash(i, 3));
-          const colr = [pal.gold, pal.sky, pal.flagRed, "#b37bff"][i % 4];
-          return <circle key={i} cx={x} cy={((y % 1080) + 1080) % 1080} r={20 + hash(i, 4) * 60} fill={colr} opacity={0.12} />;
-        })}
-      </Layer>
-      <Layer depth={1}>
-        <circle cx={960} cy={540} r={420} fill="#7aa8ff" opacity={0.12 * light} />
-        <Phone3D at={{ pos: [0, 0, z], yaw, roll: second ? -0.05 : 0.08, pitch: 0.05 }} light={light} t={f + (second ? 30 : 0)} />
-      </Layer>
-      <Layer depth={1.3}>
-        <Dust count={30} speed={0.4} color="glow" seed="pdust" />
-      </Layer>
-    </Camera>
-  );
+// 14/15. Grand Canyon fly-over at golden hour
+const canyonSetup = (second: boolean) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.75, 0.3, -0.55).normalize();
+  sh.uSunCol.value.set(1.3, 0.95, 0.62);
+  sh.uSky.value.set(0.42, 0.44, 0.56);
+  sh.uGround.value.set(0.35, 0.22, 0.15);
+  g.camera.far = 6000;
+  const sky = makeSky(sh, { top: "#4a6aa0", horizon: "#f6c087", bottom: "#b07a52", glow: 1.1, sunSize: 0.05, rays: 0.9, rayCount: 28, lines: 0.55, lineSpacing: 4, clouds: 0.3, cloudScale: 1.1, cloudHeight: 0.2, cloudCol: "#ffe2bf", cloudShade: "#9a7f86", paper: 0.1 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [400, 2600, 0.65], fogCol: "#eab98c" });
+  const cy = makeCanyon(g, 3200, 520);
+  g.scene.add(cy.mesh, cy.river);
+  g.enableShadows(2048, 900, 2000);
+  if (g.shadow) g.shadow.center.set(0, -200, second ? -400 : 400);
+  return (f: number) => {
+    const zz = (second ? 100 : 1000) - f * (second ? 14 : 11);
+    const rx = riverX(zz);
+    const ahead = zz - 600;
+    const ax = riverX(ahead);
+    if (second) {
+      g.camera.position.set(rx + 520, 60, zz + 200);
+      g.camera.lookAt(new THREE.Vector3(ax - 200, -220, ahead - 200));
+      g.camera.rotateZ(-0.05);
+    } else {
+      g.camera.position.set(rx - 120, 140 + Math.sin(f * 0.05) * 4, zz);
+      g.camera.lookAt(new THREE.Vector3(ax + 60, -260, ahead));
+      g.camera.rotateZ(0.06);
+    }
+    g.camera.fov = 55;
+    g.camera.updateProjectionMatrix();
+  };
 };
 
-// 10-11. Fighter jets streak overhead with vapor trails
-const JetsShot: React.FC<{ second?: boolean }> = ({ second }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const n = second ? 30 : 15;
-  const t = clamp(f / n);
-  const form: [number, number][] = [
-    [0, 0],
-    [-150, 160],
-    [150, 160],
-    [0, 320],
-  ];
-  const head = second ? -55 : -38;
-  const hr = (head * Math.PI) / 180;
-  const dirx = Math.sin(hr);
-  const diry = -Math.cos(hr);
-  const lead: Pt = second ? [lerp(1500, 500, t), lerp(1200, -300, t)] : [lerp(1800, 200, t), lerp(1400, -400, t)];
-  return (
-    <Camera keys={[{ f: 0, z: 1.0 }]} handheld={7} seed={97}>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={1400} y={-300} dark={0.2} />
-        <Sun x={420} y={260} r={70} rays={36} spin={0.8} />
-      </Layer>
-      <Layer depth={0.3}>
-        <Clouds speed={second ? 6 : 12} clouds={[{ x: 0, y: 700, w: 700, h: 170, seed: "jc1" }, { x: 900, y: 820, w: 600, h: 150, seed: "jc2" }, { x: 1500, y: 600, w: 500, h: 130, seed: "jc3" }]} />
-      </Layer>
-      <Layer depth={1}>
-        {form.map(([ox, oy], i) => {
-          const c0 = Math.cos(hr);
-          const s0 = Math.sin(hr);
-          const x = lead[0] + ox * c0 - oy * s0;
-          const y = lead[1] + ox * s0 + oy * c0;
-          const trail = second ? 1400 : 700;
-          return (
-            <g key={i}>
-              <line x1={x - dirx * 120} y1={y - diry * 120} x2={x - dirx * trail} y2={y - diry * trail} stroke="#ffffff" strokeWidth={second ? 18 : 10} opacity={0.7} strokeLinecap="round" />
-              <line x1={x - dirx * 100 - 60} y1={y - diry * 100} x2={x - dirx * trail * 0.5 - 60} y2={y - diry * trail * 0.5} stroke="#ffffff" strokeWidth={3} opacity={0.6} />
-              <line x1={x - dirx * 100 + 60} y1={y - diry * 100} x2={x - dirx * trail * 0.5 + 60} y2={y - diry * trail * 0.5} stroke="#ffffff" strokeWidth={3} opacity={0.6} />
-              <g transform={`translate(${x} ${y}) rotate(${head}) scale(${second ? 0.9 : 1.2})`}>
-                <circle cx={0} cy={140} r={26} fill={pal.fire} opacity={0.8} />
-                <path d={jetD(1)} fill={pal.steel} stroke={pal.ink} strokeWidth={2.4} />
-                <path d={hatch([[[0, -130], [22, -30], [90, 30], [26, 44], [28, 80], [-28, 80], [-26, 44], [-90, 30], [-22, -30]]], { angle: 90, spacing: 5, seed: `jet${i}` })} stroke={pal.ink} strokeWidth={1} opacity={0.5} />
-                <path d="M0 -110L6 -70L-6 -70Z" fill={pal.gold} />
-              </g>
-            </g>
-          );
-        })}
-      </Layer>
-      <Layer depth={1.6}>
-        {Array.from({ length: 24 }, (_, i) => {
-          const x = hash(i, 1) * 1920;
-          const y = ((hash(i, 2) * 1400 + f * 60) % 1400) - 160;
-          return <line key={i} x1={x} y1={y} x2={x + 20} y2={y + 120} stroke="#ffffff" strokeWidth={2} opacity={0.35} />;
-        })}
-      </Layer>
-    </Camera>
-  );
-};
-
-// 12-13. Flying past Mount Rushmore
-const RushmoreShot: React.FC<{ close?: boolean }> = ({ close }) => {
-  const f = useCurrentFrame();
-  const rush = memo("hy:rush", rushmoreItems);
-  const pines = memo("hy:pines", () => [...pine(-200, 1120, 420, "rp1"), ...pine(200, 1150, 520, "rp2"), ...pine(700, 1120, 380, "rp3"), ...pine(1300, 1160, 560, "rp4"), ...pine(1800, 1130, 440, "rp5"), ...pine(2200, 1150, 500, "rp6")]);
-  const n = close ? 15 : 30;
-  return (
-    <Camera keys={[{ f: 0, z: close ? 1.7 : 1.05, x: close ? 250 : -220, y: close ? -60 : 30 }, { f: n, z: close ? 1.85 : 1.12, x: close ? 420 : 220, y: close ? -80 : 0 }]} handheld={4} seed={98}>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={1400} y={-400} dark={0.2} />
-        <Clouds speed={3} clouds={[{ x: 100, y: -60, w: 600, h: 150, seed: "rc1" }, { x: 1200, y: -120, w: 520, h: 140, seed: "rc2" }]} />
-      </Layer>
-      <Layer depth={1}>
-        <InkDraw items={rush} {...Instant} />
-        <Birds x0={-100} y0={200} x1={2100} y1={120} dur={40} count={4} seed="rb" />
-      </Layer>
-      <Layer depth={1.9}>
-        <g transform={`translate(${-f * (close ? 30 : 16)} 0)`}>
-          <InkDraw items={pines} {...Instant} />
-        </g>
-      </Layer>
-    </Camera>
-  );
-};
-
-// 14-15. Grand Canyon fly-over at golden hour
-const CanyonShot: React.FC<{ second?: boolean }> = ({ second }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const layers = memo("hy:canyon2", () => [mesaLayer(460, 110, "m1", 0.05), mesaLayer(540, 160, "m2", 0.25), mesaLayer(650, 230, "m3", 0.45, true), mesaLayer(800, 300, "m4", 0.7, true), mesaLayer(1000, 380, "m5", 0.95, true)]);
-  const n = second ? 15 : 30;
-  const t = clamp(f / n);
-  return (
-    <Camera keys={[{ f: 0, z: 1.0, x: second ? 100 : -60 }, { f: n, z: second ? 1.25 : 1.35, x: second ? 220 : 40 }]} handheld={4} seed={99}>
-      <Layer depth={0.03}>
-        <Paper />
-        <EngravedSky h={1300} y={-300} dark={0.25} wash="dawn" />
-        <Sun x={second ? 1500 : 320} y={380} r={80} rays={40} spin={0.6} rayLen={1800} />
-      </Layer>
-      {layers.map((items, i) => (
-        <Layer key={i} depth={0.25 + i * 0.3}>
-          <InkDraw items={items} {...Instant} />
-          {i === 2 && <path d="M700 660C800 690 900 640 960 700S1080 760 1120 800" stroke={pal.water} strokeWidth={12} fill="none" />}
-          {i === 2 && <path d="M700 660C800 690 900 640 960 700S1080 760 1120 800" stroke="#ffffff" strokeWidth={3} fill="none" strokeDasharray="10 40" strokeDashoffset={-f * 4} />}
-        </Layer>
-      ))}
-      <Layer depth={1.6}>
-        <Birds x0={-100} y0={300} x1={2000} y1={250} dur={n + 10} count={3} size={30} seed="condor" />
-        <g opacity={0.25 + 0.1 * t}>
-          <Dust count={30} speed={1} color="glow" seed="cy" />
-        </g>
-      </Layer>
-    </Camera>
-  );
-};
-
-// 16-20. Fireworks over the city skyline
-const FireworksShot: React.FC<{ variant: number; frames: number }> = ({ variant, frames }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const sky = memo("hy:skyline", () => skylineGeo());
-  const cols = ["flagRed", "gold", "flagWhite", "sky", "fire", "glow"];
-  const bursts: Burst[] = Array.from({ length: variant === 3 ? 12 : 5 }, (_, i) => ({
-    x: 200 + hash(i, variant, 1) * 1520,
-    y: 150 + hash(i, variant, 2) * 350,
-    t0: Math.floor(hash(i, variant, 3) * (frames * 0.6)) - (variant === 1 ? 6 : 0),
-    r: 180 + hash(i, variant, 4) * 180,
-    color: cols[i % cols.length],
-    count: 40,
-    launchFrom: 900,
+// 16-20. Fireworks over the city: shells rise, burst, trail and fall
+const FW_COLS = ["#ff5a5a", "#ffffff", "#6aa8ff", "#ffd36a", "#7dff9a"];
+const fireworksSetup = (variant: number) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.2, 0.3, -1).normalize();
+  sh.uSunCol.value.set(0.15, 0.18, 0.3);
+  sh.uSky.value.set(0.12, 0.14, 0.25);
+  sh.uGround.value.set(0.06, 0.05, 0.08);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#050818", horizon: "#1c2350", bottom: "#050818", glow: 0, rays: 0, lines: 0.35, lineSpacing: 4, stars: 0.9, paper: 0 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [300, 1400, 0.35], fogCol: "#1a2044" });
+  const city = makeSkyline(g, { count: 110, x: [-800, 800], z: [-800, -450], seed: "city" + (variant % 2) });
+  g.scene.add(city.mesh);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(3000, 300).rotateX(-Math.PI / 2), g.ink({ color: "#0d1430", spec: 1.2, gloss: 30, mode: "screen", angle: 0, scale: 3, emissive: "#0a1030", emissiveAmt: 0.5 }));
+  water.position.set(0, -0.5, -20);
+  g.scene.add(water);
+  const plaza = new THREE.Mesh(new THREE.PlaneGeometry(400, 80).rotateX(-Math.PI / 2), g.ink({ color: "#2a2a33", mode: "stipple" }));
+  plaza.position.set(0, 0, 150);
+  g.scene.add(plaza);
+  // crowd silhouettes in the foreground
+  const figs: { fig: ReturnType<typeof makeFigure>; ph: number; up: boolean }[] = [];
+  const r = rng("fwcrowd" + variant);
+  const nFig = variant === 2 ? 12 : 7;
+  for (let i = 0; i < nFig; i++) {
+    const fig = makeFigure(g, "civilian", { color: { coat: "#15161c", pants: "#101014", skin: "#2a2224" }, mat: { hatch: 0.3, rim: 1.4, rimCol: "#9fb4ff" } });
+    fig.root.position.set(-7 + i * (14 / nFig) + r() * 1.2, 0, 131 - r() * 3);
+    fig.root.rotation.y = Math.PI + (r() - 0.5) * 0.6;
+    g.scene.add(fig.root);
+    figs.push({ fig, ph: r() * 6, up: r() < 0.6 });
+  }
+  const glows = FW_COLS.map((cc) => new Glows(sh, 900, cc, 1.3));
+  glows.forEach((gl) => g.scene.add(gl.mesh));
+  const flashLight = new THREE.Color();
+  const r2 = rng("fw" + variant);
+  const shells = Array.from({ length: variant === 3 ? 14 : 7 }, (_, i) => ({
+    x: (r2() - 0.5) * 900,
+    y: 240 + r2() * 260,
+    z: -350 - r2() * 250,
+    t: (variant === 1 ? -0.4 : -0.6) + i * (variant === 3 ? 0.07 : 0.16) + r2() * 0.1,
+    col: Math.floor(r2() * FW_COLS.length),
+    n: 80 + Math.floor(r2() * 60),
+    v: 90 + r2() * 70,
   }));
-  if (variant === 1) bursts.unshift({ x: 960, y: 480, t0: 0, r: 520, color: "gold", count: 70 });
-  return (
-    <Camera keys={[{ f: 0, z: variant === 1 ? 1.25 : 1.02 }, { f: frames, z: variant === 1 ? 1.4 : 1.1, y: -10 }]} handheld={5} seed={100 + variant}>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={1300} y={-300} dark={0.8} wash="night" />
-        <Stars count={100} h={700} seed={`fws${variant}`} />
-      </Layer>
-      <Layer depth={0.5}>
-        <Fireworks bursts={bursts} seed={`fw${variant}`} life={36} />
-      </Layer>
-      <Layer depth={0.7}>
-        <path d={sky.d} fill={pal.night} stroke={pal.ink} strokeWidth={2} />
-        <path d={sky.windows} stroke={pal.glow} strokeWidth={6} opacity={0.8} />
-        <InkSea top={900} bottom={1250} rows={16} amp={6} speed={0.6} drift={0.4} wash="night" washNear="night" seed={`riv${variant}`} lineOp={0.6} />
-        {bursts.slice(0, 5).map((b, i) => (b.t0 <= f && f - b.t0 < 30 ? <ellipse key={i} cx={b.x} cy={1100 - (b.y - 150) * 0.3} rx={60} ry={120} fill={(pal as unknown as Record<string, string>)[b.color ?? "gold"]} opacity={0.3 * (1 - (f - b.t0) / 30)} /> : null))}
-      </Layer>
-      <Layer depth={1.3}>
-        {Array.from({ length: 16 }, (_, i) => {
-          const x = -100 + i * 140 + hash(i, 5) * 40;
-          const arm = Math.sin(f / 4 + i) * 16;
-          return (
-            <g key={i} fill="#05070f" transform={`translate(${x} ${1080 + Math.abs(Math.sin(f / 5 + i)) * -10})`}>
-              <path d="M-40 0Q-40 -100 0 -110Q40 -100 40 0Z" />
-              <circle cx={0} cy={-135} r={28} />
-              {i % 3 === 0 && <path d={`M20 -100L${60} ${-190 + arm}`} stroke="#05070f" strokeWidth={16} strokeLinecap="round" />}
-            </g>
-          );
-        })}
-      </Layer>
-    </Camera>
-  );
+  return (f: number, t: number) => {
+    const cams = [
+      [{ f: 0, pos: [0, 1.2, 137], look: [0, 150, -400], fov: 55 }, { f: 30, pos: [0, 1.25, 135], look: [0, 160, -400], fov: 54 }],
+      [{ f: 0, pos: [30, 20, 170], look: [-30, 300, -450], fov: 45 }, { f: 15, pos: [26, 18, 160], look: [-30, 310, -450], fov: 44 }],
+      [{ f: 0, pos: [-5, 1.1, 137], look: [10, 130, -400], fov: 62 }, { f: 30, pos: [-3, 1.15, 135], look: [10, 140, -400], fov: 62 }],
+      [{ f: 0, pos: [0, 40, 300], look: [0, 220, -450], fov: 58 }, { f: 30, pos: [0, 36, 280], look: [0, 240, -450], fov: 58 }],
+    ] as const;
+    driveCamera(g, cams[variant % 4] as never, f, 0.01, 13 + variant);
+    const lists: Puff[][] = FW_COLS.map(() => []);
+    let flash = 0;
+    for (const s of shells) {
+      const a = t - s.t;
+      if (a < -0.5) continue;
+      if (a < 0) {
+        // rising shell with a sparkling tail
+        const u = 1 + a / 0.5;
+        const y = s.y * (1 - Math.pow(1 - u, 2));
+        for (let k = 0; k < 6; k++) lists[3].push({ x: s.x, y: y - k * 6, z: s.z, size: 3 - k * 0.4, alpha: 0.8 - k * 0.12 });
+        continue;
+      }
+      if (a > 2.2) continue;
+      flash += Math.max(0, 1 - a / 0.35);
+      for (let i = 0; i < s.n; i++) {
+        const th = hash(i, s.col, 1) * Math.PI * 2;
+        const ph = Math.acos(hash(i, s.col, 2) * 2 - 1);
+        const dir = new THREE.Vector3(Math.sin(ph) * Math.cos(th), Math.cos(ph), Math.sin(ph) * Math.sin(th));
+        const drag = 1.6;
+        for (let k = 0; k < 5; k++) {
+          const at = Math.max(0, a - k * 0.06);
+          const dist = (s.v * (1 - Math.exp(-drag * at))) / drag;
+          const fall = 12 * at * at;
+          lists[s.col].push({ x: s.x + dir.x * dist, y: s.y + dir.y * dist - fall, z: s.z + dir.z * dist, size: (4.5 - k * 0.7) * (1 - a / 2.4), alpha: (1 - a / 2.2) * (1 - k * 0.18) * (0.8 + 0.2 * Math.sin(a * 40 + i)) });
+        }
+      }
+      flashLight.set(FW_COLS[s.col]);
+    }
+    glows.forEach((gl, i) => gl.set(lists[i], g.camera));
+    const fl = Math.min(1, flash);
+    (city.mat.uniforms.uFlash.value as THREE.Color).copy(flashLight).multiplyScalar(fl * 0.6);
+    sh.uSunCol.value.setRGB(0.15 + fl * flashLight.r * 0.6, 0.18 + fl * flashLight.g * 0.6, 0.3 + fl * flashLight.b * 0.6);
+    figs.forEach(({ fig, ph, up }) => {
+      const b = Math.sin(t * 6 + ph);
+      fig.pose(up ? { lSh: [2.7 + b * 0.1, 0.3, 0], rSh: [2.5 - b * 0.1, 0.4, 0], lEl: 0.2, rEl: 0.3, neck: 0.35 } : { lSh: [0.2, 0.15, 0], rSh: [1.0, 0.3, 0], rEl: 1.6, neck: 0.4 });
+    });
+  };
+};
+
+const G = (setup: (g: GL) => (f: number, t: number) => void) => {
+  const C: React.FC = () => <GLShot setup={setup} color />;
+  return <C />;
 };
 
 const S = (a: number, b: number, el: React.ReactNode, enter: "cut" | "flash" | "punch" | "whip" | "whipUp" = "cut", name = "") => ({
@@ -526,29 +536,29 @@ export const hype: SceneDef = {
   id: "hype",
   seedBase: 90,
   shots: [
-    S(0, 1, <EarthriseShot />, "cut", "earthrise"),
-    S(1, 1.5, <WallShot />, "punch", "wall cracks"),
-    S(1.5, 2.5, <WallShot crumble />, "cut", "wall falls"),
-    S(2.5, 3, <CircuitShot />, "flash", "circuit"),
-    S(3, 3.5, <CircuitShot macro />, "cut", "circuit macro"),
-    S(3.5, 4.5, <ComputersShot />, "punch", "computers"),
-    S(4.5, 5.5, <NetMapShot />, "whip", "network map"),
-    S(5.5, 6.5, <PhoneShot />, "flash", "phone"),
-    S(6.5, 7.5, <PhoneShot second />, "cut", "phone close"),
-    S(7.5, 8, <JetsShot />, "punch", "jets"),
-    S(8, 9, <JetsShot second />, "cut", "vapor trails"),
-    S(9, 10, <RushmoreShot />, "whip", "rushmore"),
-    S(10, 10.5, <RushmoreShot close />, "cut", "rushmore close"),
-    S(10.5, 11.5, <CanyonShot />, "flash", "grand canyon"),
-    S(11.5, 12, <CanyonShot second />, "cut", "canyon 2"),
-    S(12, 13, <FireworksShot variant={0} frames={30} />, "punch", "fireworks"),
-    S(13, 13.5, <FireworksShot variant={1} frames={15} />, "cut", "firework burst"),
-    S(13.5, 14.5, <FireworksShot variant={2} frames={30} />, "flash", "skyline"),
-    S(14.5, 15.5, <FireworksShot variant={3} frames={30} />, "cut", "finale"),
-    S(15.5, 16, <FireworksShot variant={1} frames={15} />, "punch", "last burst"),
+    S(0, 1, G(earthriseSetup), "cut", "earthrise"),
+    S(1, 1.5, G(wallSetup(false)), "punch", "wall cracks"),
+    S(1.5, 2.5, G(wallSetup(true)), "cut", "wall falls"),
+    S(2.5, 3, G(circuitSetup(false)), "whip", "circuit"),
+    S(3, 3.5, G(circuitSetup(true)), "cut", "circuit macro"),
+    S(3.5, 4.5, G(computersSetup), "punch", "computers"),
+    S(4.5, 5.5, G(netSetup), "whip", "network map"),
+    S(5.5, 6.5, G(phoneSetup(false)), "cut", "phone"),
+    S(6.5, 7.5, G(phoneSetup(true)), "cut", "phone close"),
+    S(7.5, 8, G(jetsSetup(false)), "punch", "jets"),
+    S(8, 9, G(jetsSetup(true)), "cut", "vapor trails"),
+    S(9, 10, G(rushmoreSetup(false)), "whip", "rushmore"),
+    S(10, 10.5, G(rushmoreSetup(true)), "cut", "rushmore close"),
+    S(10.5, 11.5, G(canyonSetup(false)), "whipUp", "grand canyon"),
+    S(11.5, 12, G(canyonSetup(true)), "cut", "canyon 2"),
+    S(12, 13, G(fireworksSetup(0)), "flash", "fireworks"),
+    S(13, 13.5, G(fireworksSetup(1)), "cut", "firework burst"),
+    S(13.5, 14.5, G(fireworksSetup(2)), "punch", "skyline"),
+    S(14.5, 15.5, G(fireworksSetup(3)), "cut", "finale"),
+    S(15.5, 16, G(fireworksSetup(1)), "punch", "last burst"),
   ],
   hits: Array.from({ length: 32 }, (_, i) => ({ f: c(i * 0.5), amp: i % 2 === 0 ? 14 : 7, dur: 8, punch: i % 4 === 0 ? 0.03 : 0 })),
-  flashes: [{ f: c(15.5), dur: 10, peak: 0.8 }],
+  flashes: [{ f: c(15.5), dur: 10, peak: 0.6 }],
   Overlay: () => (
     <>
       <Quote {...QUOTES.reagan} start={c(1) + 2} end={c(4.5)} framesPerWord={3} />
@@ -556,4 +566,3 @@ export const hype: SceneDef = {
     </>
   ),
 };
-

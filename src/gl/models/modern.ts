@@ -91,25 +91,28 @@ export const wallSegmentGeo = () =>
 
 export const wallMaterial = (g: GL, seed: string) => {
   const tex = canvasTex(`graf${seed}`, 2048, 512, (ctx) => graffiti(ctx, 2048, 512, seed));
+  tex.wrapS = THREE.RepeatWrapping;
   return g.ink({
     color: "#ffffff",
-    mode: "world",
-    dir: [1, 0.1, 0],
-    scale: 9,
-    cross: 0.6,
-    shade: 0.85,
+    mode: "screen",
+    angle: 65,
+    scale: 3.5,
+    cross: 0.5,
+    shade: 0.8,
+    hatch: 0.7,
     uniforms: { uGraf: { value: tex }, uCrack: { value: 0 } },
     fragDecl: "uniform sampler2D uGraf; uniform float uCrack;",
     frag: /* glsl */ `
       // graffiti mapped along the wall (x) and height (y), only on the east face
-      vec2 guv = vec2(vWorld.x / 19.2, clamp(vWorld.y / 3.6, 0.0, 1.0));
+      vec2 guv = vec2(vWorld.x / 19.2 + 0.5, clamp(vWorld.y / 3.6, 0.0, 1.0));
       vec3 gc = texture(uGraf, guv).rgb;
       float front = smoothstep(0.3, 0.7, N.z);
       albedo = mix(vec3(0.82, 0.8, 0.75), gc, front);
       // cracks spreading across the wall
-      float cr = tvn(vWorld.xy * vec2(3.0, 1.5)) * 0.6 + tvn(vWorld.xy * 9.0) * 0.4;
-      float line = 1.0 - smoothstep(0.0, 0.035, abs(cr - 0.5));
-      float grow = step(tvn(vWorld.xy * 0.7 + 3.0), uCrack);
+      vec2 cp = vWorld.xy + (vec2(tvn(vWorld.xy * 2.0), tvn(vWorld.xy * 2.0 + 5.0)) - 0.5) * 0.6;
+      float cr = tvn(cp * vec2(2.2, 1.1));
+      float line = 1.0 - smoothstep(0.0, 0.012, abs(cr - 0.5));
+      float grow = smoothstep(uCrack * 6.0, uCrack * 6.0 - 1.0, length((vWorld.xy - vec2(0.0, 2.0)) * vec2(1.0, 1.4)));
       extraInk += line * grow * 1.2;
       albedo *= 1.0 - line * grow * 0.7;
     `,
@@ -310,7 +313,7 @@ export const makeCRT = (g: GL, lines: string[], key: string, phosphor = "#7dff9a
   const monitor = merge([box(0.64, 0.52, 0.12, 0, 0.62, 0.2), place(back, [0, 0.62, -0.08], [0, 0, 0], [1.05, 1, 0.85]), box(0.3, 0.06, 0.26, 0, 0.33, 0.02)]);
   group.add(new THREE.Mesh(monitor, bodyM));
   const scr = new THREE.SphereGeometry(1.6, 24, 18, Math.PI * 0.5 - 0.16, 0.32, Math.PI * 0.5 - 0.12, 0.24);
-  scr.translate(0, 0, -1.6 + 0.27);
+  scr.translate(0, 0, -1.6 + 0.295);
   const scrMesh = new THREE.Mesh(scr, screenM);
   scrMesh.position.set(0, 0.63, 0);
   // fix uvs of the sphere patch to 0..1
@@ -325,7 +328,7 @@ export const makeCRT = (g: GL, lines: string[], key: string, phosphor = "#7dff9a
     vmin = Math.min(vmin, uv.getY(i));
     vmax = Math.max(vmax, uv.getY(i));
   }
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, 1 - (uv.getX(i) - umin) / (umax - umin), (uv.getY(i) - vmin) / (vmax - vmin));
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) - umin) / (umax - umin), (uv.getY(i) - vmin) / (vmax - vmin));
   group.add(scrMesh);
   // base unit + keyboard with keycaps
   group.add(new THREE.Mesh(box(0.75, 0.16, 0.5, 0, 0.08, 0.05), bodyM));
@@ -410,7 +413,8 @@ export const makePhone = (g: GL) => {
   group.add(s);
   // camera bump on the back
   const camM = g.ink({ color: "#1a1a1c", spec: 1.2, gloss: 70, rim: 0.5 });
-  const bump = merge([box(0.03, 0.03, 0.002, -W + 0.022, H - 0.022, -0.0048), cyl(0.0055, 0.0055, 0.003, 20, -W + 0.015, H - 0.015, -0.0055).rotateX(Math.PI / 2), cyl(0.0055, 0.0055, 0.003, 20, -W + 0.015, H - 0.03, -0.0055).rotateX(Math.PI / 2)]);
+  const lens = (x: number, y: number) => new THREE.CylinderGeometry(0.0055, 0.0055, 0.003, 20).rotateX(Math.PI / 2).translate(x, y, -0.0058);
+  const bump = merge([box(0.03, 0.03, 0.002, -W + 0.019, H - 0.022, -0.0048), lens(-W + 0.013, H - 0.015), lens(-W + 0.013, H - 0.03), lens(-W + 0.027, H - 0.022)]);
   group.add(new THREE.Mesh(bump, camM));
   return { group, screenM };
 };
