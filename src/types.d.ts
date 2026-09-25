@@ -4,16 +4,22 @@ declare module "d3-geo" {
     (p: [number, number]): [number, number] | null;
     fitExtent(extent: [[number, number], [number, number]], object: unknown): GeoProjection;
     scale(): number;
+    scale(s: number): GeoProjection;
     translate(): [number, number];
+    translate(t: [number, number]): GeoProjection;
+    rotate(r: [number, number] | [number, number, number]): GeoProjection;
+    clipAngle(a: number): GeoProjection;
   }
   export function geoAlbers(): GeoProjection;
+  export function geoEquirectangular(): GeoProjection;
+  export function geoOrthographic(): GeoProjection;
   export interface GeoPath {
     (object: unknown): string | null;
     centroid(object: unknown): [number, number];
     bounds(object: unknown): [[number, number], [number, number]];
     digits(d: number): GeoPath;
   }
-  export function geoPath(projection?: GeoProjection): GeoPath;
+  export function geoPath(projection?: GeoProjection, context?: CanvasRenderingContext2D): GeoPath;
 }
 
 declare module "topojson-client" {

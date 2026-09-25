@@ -1,8 +1,18 @@
 // Procedural geometry kit.
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 export { mergeGeometries };
+
+// smooth sphere (polyhedron geometries are non-indexed = flat shaded)
+export const smoothIco = (r: number, detail: number) => {
+  const g = new THREE.IcosahedronGeometry(r, detail);
+  g.deleteAttribute("normal");
+  g.deleteAttribute("uv");
+  const m = mergeVertices(g);
+  m.computeVertexNormals();
+  return m;
+};
 
 // Smooth lathe from [radius, y] points; `smooth` resamples with Catmull-Rom.
 export const lathe = (pts: [number, number][], segs = 64, smooth = 0) => {

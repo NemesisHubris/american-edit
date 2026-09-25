@@ -1,230 +1,283 @@
-// 8. THE DROP — engines ignite on the beat; ColorFlood from sepia to full
-// colour; the rocket clears the tower; the LM descends; a boot presses into
-// lunar dust in slow motion; the flag stands on the Moon.
-import { useCurrentFrame } from "remotion";
-import { Camera, Layer } from "../components/Camera";
-import { InkDraw } from "../components/InkDraw";
-import { Paper } from "../components/Parchment";
-import { Dust, Smoke, Sparks } from "../components/Particles";
-import { EngravedSky, Stars } from "../components/Sky";
-import { Flag } from "../components/Cloth";
-import { ColorFlood } from "../components/ColorFlood";
+// 8. THE DROP — engines ignite on the beat; the colour floods out from the
+// engines; the rocket clears the tower; the LM descends with dust blasting
+// outward; a boot presses into lunar dust in slow motion; the flag on the Moon.
+import * as THREE from "three";
 import { Quote } from "../components/WordPop";
 import { QUOTES } from "../quotes";
-import { astronautItems, earthItems, lmItems, saturnVItems, towerItems } from "../art/saturn";
-import { bootItems, lunarGround } from "../art/space";
-import { Plume } from "../art/Plume";
-import { clamp, easeInOut, easeOut, memo, ramp, TAU } from "../lib/math";
-import { usePalette } from "../lib/palette";
-import { hash } from "../lib/random";
 import { sceneClock } from "../timeline";
+import { GLShot, GL, driveCamera, drawIn } from "../gl/GLShot";
+import { dawnSet } from "../gl/sets/cape";
+import { lunarSet, makeBoot, printPatch } from "../gl/sets/moon";
+import { makeLM, plumeMaterial } from "../gl/models/space";
+import { makeFlag } from "../gl/models/flag";
+import { makeFigure } from "../gl/figure";
+import { emit, Glows, Puff, Puffs, Smoke } from "../gl/particles";
+import { hash } from "../lib/random";
 import type { SceneDef } from "./types";
 
 const c = sceneClock("drop");
 
-// A. Ignition on the beat: flash, plume, billowing smoke, colour floods out
-const IgnitionInner: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const S = 12;
-  const rocket = memo("dr:rocket12", () => saturnVItems(S));
-  const tower = memo("dr:tower12", () => towerItems(S));
-  const g = ramp(f, 0, 5, easeOut);
-  const lift = f > 14 ? Math.pow(f - 14, 1.6) * 0.8 : 0;
-  const BX = 1000;
-  const BY = 690;
-  return (
-    <Camera keys={[{ f: 0, z: 1.12, y: 40 }, { f: 30, z: 1.0, y: -10 }]} handheld={10} seed={81}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={1300} y={-300} dark={0.35} wash="dawn" washOp={0.4} />
-      </Layer>
-      <Layer depth={1}>
-        <g transform={`translate(${BX} ${BY})`}>
-          <InkDraw items={tower} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-        <g transform={`translate(${BX} ${BY - lift})`}>
-          {rocket.engines.map(([x, y], i) => (
-            <Plume key={i} x={x} y={y} r={52} len={1000} g={g} seed={i + 3} spread={3.4} />
-          ))}
-          <InkDraw items={rocket.items} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-        <Sparks x={BX} y={BY + 120} t0={1} count={90} speed={40} angle={Math.PI / 2} spread={Math.PI * 1.4} gravity={0.3} life={22} seed="ign" />
-      </Layer>
-      <Layer depth={1.3}>
-        <Smoke x={BX - 260} y={BY + 260} rate={1.1} start={3} life={40} size={210} vx={-18} vy={-2} spread={5} shade={0.35} seed="igl" />
-        <Smoke x={BX + 260} y={BY + 260} rate={1.1} start={3} life={40} size={210} vx={18} vy={-2} spread={5} shade={0.35} seed="igr" />
-      </Layer>
-      <Layer depth={0} html>
-        <div style={{ position: "absolute", inset: 0, background: pal.mode === "color" ? "radial-gradient(ellipse at 50% 80%, rgba(255,160,40,0.35), rgba(255,120,20,0) 60%)" : "none" }} />
-      </Layer>
-    </Camera>
-  );
+// five F-1 plumes under the rocket (top of each cone at the nozzle)
+const f1Plumes = (g: GL, len: number, str = 1) => {
+  const mat = plumeMaterial(g, { core: "#fff8dc", edge: "#ff7a1c", str, diamonds: 4 });
+  const group = new THREE.Group();
+  const geo = new THREE.CylinderGeometry(1.8, 5.5, len, 28, 1, true);
+  geo.translate(0, -len / 2, 0);
+  for (const [x, z] of [
+    [0, 0],
+    [3.3, 3.3],
+    [-3.3, 3.3],
+    [3.3, -3.3],
+    [-3.3, -3.3],
+  ]) {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, 0.2, z);
+    group.add(m);
+  }
+  // a wide outer glow
+  const outer = new THREE.Mesh(new THREE.CylinderGeometry(6, 16, len * 1.1, 28, 1, true).translate(0, (-len * 1.1) / 2, 0), plumeMaterial(g, { core: "#ffd28a", edge: "#ff5a10", str: str * 0.5 }));
+  group.add(outer);
+  return { group, mat };
 };
 
-const IgnitionShot: React.FC = () => (
-  <ColorFlood at={1} dur={14} origin={[1000, 800]}>
-    <IgnitionInner />
-  </ColorFlood>
-);
+// A. Ignition on the beat: fire bursts out of the flame trench on both sides,
+// smoke boils up lit orange from inside, the whole pad glows
+const ignitionSetup = (g: GL) => {
+  const set = dawnSet(g);
+  const plumes = f1Plumes(g, 34, 1.4);
+  g.scene.add(plumes.group);
+  const smoke = new Smoke(g, 420, { color: "#f4eee6", heatCol: "#ff9b40" });
+  g.scene.add(smoke.mesh);
+  const fire = new Smoke(g, 260, { color: "#ffcf7a", fire: true, hatch: 0.25 });
+  g.scene.add(fire.mesh);
+  const sparks = new Glows(g.shared, 200, "#ffc070", 1.6);
+  g.scene.add(sparks.mesh);
+  const bloom = new Glows(g.shared, 24, "#ff8a2a", 0.4);
+  g.scene.add(bloom.mesh);
+  g.shared.uPL0.value.set(0, -6, 0, 170);
+  return (f: number, t: number) => {
+    driveCamera(
+      g,
+      [
+        { f: 0, pos: [22, 2, 118], look: [2, 26, 0], fov: 46 },
+        { f: 30, pos: [19, 0, 104], look: [2, 30, 0], fov: 44 },
+      ],
+      f,
+      0.01,
+      8,
+    );
+    const ign = Math.min(1, f / 5);
+    plumes.group.scale.set(1, 0.2 + ign * 0.8, 1);
+    plumes.mat.uniforms.uStr.value = 1.4 * ign;
+    const flick = 0.85 + 0.15 * Math.sin(t * 40);
+    g.shared.uPLc0.value.setRGB(3.4 * ign * flick, 2.0 * ign * flick, 0.8 * ign * flick);
+    // flame-trench exits either side of the mobile launcher
+    const fl: Puff[] = [];
+    const sm: Puff[] = [];
+    for (const side of [-1, 1]) {
+      emit({ at: [side * 22, -12, 0], rate: 70, life: 0.75, vel: [side * 62, 3, 0], spread: 6, size: [3, 8], drag: 1.6, heat: 1, heatFade: 5, start: 0.03, seed: side > 0 ? 13 : 14, jitter: [1, 1, 7] }, t, fl);
+      emit({ at: [side * 40, -12, 0], rate: 34, life: 3, vel: [side * 34, 7, 0], spread: 8, size: [4, 17], wind: [0, 3, 0], drag: 0.9, heat: 1, heatFade: 1.4, start: 0.12, seed: side > 0 ? 3 : 4, jitter: [3, 2, 10] }, t, sm);
+    }
+    // fire under the deck + smoke rolling up around the launcher
+    emit({ at: [0, -9, 0], rate: 30, life: 0.8, vel: [0, -2, 0], spread: 14, size: [3, 7], drag: 1.5, heat: 1, heatFade: 5, start: 0.02, seed: 9, jitter: [14, 1, 14] }, t, fl);
+    emit({ at: [0, -8, -18], rate: 14, life: 3, vel: [0, 9, -6], spread: 6, size: [5, 16], drag: 0.8, heat: 1, heatFade: 1.2, start: 0.25, seed: 10, jitter: [20, 2, 4] }, t, sm);
+    fire.set(fl);
+    smoke.set(sm);
+    set.puffs.set(set.vapour(t + 3, false), g.camera);
+    set.cloudPuffs.set(set.banks(t), g.camera);
+    const bl: Puff[] = [];
+    for (const side of [-1, 1])
+      for (let i = 0; i < 6; i++) bl.push({ x: side * (24 + i * 9), y: -10 + hash(i, side + 5) * 6, z: (hash(i, side + 9) - 0.5) * 10, size: (16 + hash(i, 54) * 14) * ign, alpha: 0.4 * flick });
+    bloom.set(bl, g.camera);
+    const sp: Puff[] = [];
+    for (let i = 0; i < 180; i++) {
+      const born = hash(i, 7) * 0.9;
+      const age = t - born;
+      if (age < 0 || age > 0.8) continue;
+      const side = i % 2 ? 1 : -1;
+      const v = 40 + hash(i, 9) * 50;
+      sp.push({ x: side * (22 + v * age), y: -12 + (6 + hash(i, 10) * 26) * age - 9 * age * age, z: (hash(i, 8) - 0.5) * 16, size: 0.5, alpha: 1 - age / 0.8, stretch: 3 });
+    }
+    sparks.set(sp, g.camera);
+    drawIn(set.inks, f, -60, 10);
+  };
+};
 
 // B. The rocket clears the tower; the camera tracks it up
-const ClearShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const S = 9;
-  const rocket = memo("dr:rocket9", () => saturnVItems(S));
-  const tower = memo("dr:tower9", () => towerItems(S));
-  const rise = 200 + Math.pow(f, 1.5) * 9;
-  return (
-    <Camera keys={[{ f: 0, z: 1.0 }]} handheld={9} seed={82}>
-      <Layer depth={0.2}>
-        <Paper y={-1000} h={3000} />
-        <EngravedSky x={-600} y={-1000} w={3200} h={3000} dark={0.3} wash="sky" washOp={0.55} />
-      </Layer>
-      <Layer depth={1}>
-        <g transform={`translate(1060 ${1180 + rise})`}>
-          <InkDraw items={tower} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-        <g transform={`translate(1060 ${860 - f * 2})`}>
-          {rocket.engines.map(([x, y], i) => (
-            <Plume key={i} x={x} y={y} r={40} len={1300} g={1} seed={i + 7} spread={3.2} />
-          ))}
-          <InkDraw items={rocket.items} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-        <Smoke x={1060} y={1180 + rise} rate={1} life={40} size={260} vx={0} vy={-1} spread={10} shade={0.3} seed="clr" />
-      </Layer>
-      <Layer depth={1.5}>
-        {Array.from({ length: 30 }, (_, i) => {
-          const x = hash(i, 1) * 1920;
-          const y = ((hash(i, 2) * 1400 + f * (30 + hash(i, 3) * 30)) % 1400) - 160;
-          return <line key={i} x1={x} y1={y} x2={x} y2={y + 60 + hash(i, 4) * 80} stroke="#ffffff" strokeWidth={1.5} opacity={0.4} />;
-        })}
-      </Layer>
-    </Camera>
-  );
+const clearSetup = (g: GL) => {
+  const set = dawnSet(g);
+  const plumes = f1Plumes(g, 70, 1.3);
+  set.rocket.group.add(plumes.group);
+  const trail = new Smoke(g, 500, { color: "#f6f1ea", heatCol: "#ffa24a" });
+  g.scene.add(trail.mesh);
+  return (f: number, t: number) => {
+    const rise = 92 + f * 1.25 + f * f * 0.012;
+    set.rocket.group.position.y = rise;
+    const camY = 128 + f * 0.9;
+    driveCamera(g, [{ f: 0, pos: [70, camY, 150], look: [-6, camY + 8, 0], fov: 38 }], f, 0.012, 9);
+    const list: Puff[] = [];
+    emit({ at: [0, rise - 60, 0], rate: 50, life: 3, vel: [0, -6, 0], spread: 5, size: [6, 26], wind: [2, 1, 0], drag: 0.8, heat: 0.8, heatFade: 0.5, seed: 21, prewarm: 1.5, jitter: [4, 10, 4] }, t, list);
+    // billowing cloud around the pad far below
+    emit({ at: [0, 0, 0], rate: 30, life: 5, vel: [0, 4, 0], spread: 14, size: [20, 60], drag: 0.5, alpha: 0.9, seed: 22, prewarm: 5, jitter: [40, 4, 40] }, t, list);
+    trail.set(list);
+    set.puffs.set(set.vapour(t + 5).slice(0, 0), g.camera);
+    set.cloudPuffs.set(set.banks(t), g.camera);
+    set.birds.update(t);
+  };
 };
 
-// C. The lunar module descends; dust blasts outward across the surface
-const LMShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const lm = memo("dr:lm", () => lmItems(66));
-  const earth = memo("dr:earth", () => earthItems(70));
-  const ground = memo("dr:lground", () => lunarGround(700, "lmg"));
-  const y = 520 + easeOut(clamp(f / 30)) * 190;
-  const blast = clamp(1 - (y - 520) / 250 + 0.4);
-  return (
-    <Camera keys={[{ f: 0, z: 1.05 }, { f: 30, z: 1.12, y: 20 }]} handheld={7} seed={83}>
-      <Layer depth={0.05}>
-        <rect x={-400} y={-400} width={2720} height={1900} fill={pal.space} />
-        <Stars count={120} h={800} y={-200} seed="lmstars" />
-        <g transform="translate(1550 220)">
-          <InkDraw items={earth} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-      </Layer>
-      <Layer depth={0.8}>
-        <InkDraw items={ground.items} start={-30} dur={2} hatchAt={0} washAt={0} washDur={1} />
-        {Array.from({ length: 40 }, (_, i) => {
-          const a = (i / 40) * TAU;
-          const k = ((f * 0.06 + hash(i, 1)) % 1 + 1) % 1;
-          const r0 = 60 + k * 900;
-          const x = 960 + Math.cos(a) * r0;
-          const yy = 760 + Math.sin(a) * r0 * 0.18;
-          return <line key={i} x1={x} y1={yy} x2={x + Math.cos(a) * 90} y2={yy + Math.sin(a) * 16} stroke={pal.moon} strokeWidth={3} opacity={(1 - k) * 0.9 * blast} />;
-        })}
-        <Smoke x={760} y={760} rate={1} life={26} size={80} vx={-20} vy={-0.6} spread={3} shade={0.2} color="moon" outline={1} seed="lmdl" />
-        <Smoke x={1160} y={760} rate={1} life={26} size={80} vx={20} vy={-0.6} spread={3} shade={0.2} color="moon" outline={1} seed="lmdr" />
-      </Layer>
-      <Layer depth={1}>
-        <path d={`M920 ${y - 90}L1000 ${y - 90}L1060 ${y + 60}L860 ${y + 60}Z`} fill={pal.glow} opacity={0.35} />
-        <g transform={`translate(960 ${y})`}>
-          <InkDraw items={lm} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={60} speed={4} color="moon" seed="lmdust" size={3} />
-      </Layer>
-    </Camera>
-  );
+// C. The LM descends; dust blasts out radially
+const lmSetup = (g: GL) => {
+  const moon = lunarSet(g, { sun: [0.7, 0.28, 0.3], earth: [-420, 300, -560], earthR: 34, flatAt: [0, 0, 8], seed: "tranq", shadows: 30 });
+  const lm = makeLM(g);
+  g.scene.add(lm.group);
+  const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 2.2, 5, 20, 1, true).translate(0, -2.5, 0), plumeMaterial(g, { core: "#e8f0ff", edge: "#9fb4ff", str: 0.5 }));
+  lm.group.add(glow);
+  const dust = new Puffs(g.shared, 600, { lit: "#efe8da", shade: "#9a9284", outline: 0.15, hatch: 0.25, lineSpacing: 4, soft: 0.3, rough: 0.3 });
+  g.scene.add(dust.mesh);
+  const baseH = moon.hf(0, 0);
+  return (f: number, t: number) => {
+    const alt = 6.5 - f * 0.12;
+    lm.group.position.set(0, baseH + alt, 0);
+    lm.group.rotation.set(Math.sin(t * 1.3) * 0.02, 0.5, Math.sin(t * 1.1) * 0.025);
+    driveCamera(
+      g,
+      [
+        { f: 0, pos: [15, baseH + 4.5, 20], look: [0, baseH + 4.2, 0], fov: 42 },
+        { f: 30, pos: [12.5, baseH + 3.6, 17], look: [0, baseH + 3.2, 0], fov: 42 },
+      ],
+      f,
+      0.015,
+      11,
+    );
+    const list: Puff[] = [];
+    for (let i = 0; i < 360; i++) {
+      const born = hash(i, 31) * 1.4 - 0.4;
+      const age = t - born;
+      if (age < 0 || age > 0.9) continue;
+      const a = hash(i, 32) * 6.28;
+      const v = 14 + hash(i, 33) * 22;
+      const r = 1.5 + v * age;
+      list.push({ x: Math.cos(a) * r, y: baseH + 0.15 + hash(i, 34) * 0.6 + age * 0.4, z: Math.sin(a) * r, size: 0.35 + age * 1.6, alpha: (1 - age / 0.9) * 0.75, stretch: 3, seed: hash(i, 35) * 9 });
+    }
+    dust.set(list, g.camera);
+    drawIn(lm.mats, f, -60, 10);
+  };
 };
 
-// D. A boot presses into lunar dust in slow motion
-const BootSlowShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const boot = memo("co:boot", bootItems);
-  const ground = memo("co:ground", () => lunarGround(360, "co"));
-  const contact = 16;
-  const down = f < contact ? -160 * (1 - easeInOut(f / contact)) : Math.min(14, (f - contact) * 0.8);
-  const a = f - contact;
-  return (
-    <Camera keys={[{ f: 0, z: 1.05, y: -10 }, { f: 45, z: 1.16, y: 20 }]} handheld={3} seed={84}>
-      <Layer depth={0.15}>
-        <rect x={-400} y={-400} width={2720} height={900} fill={pal.space} />
-        <Stars count={90} h={700} seed="bstars" />
-      </Layer>
-      <Layer depth={0.7}>
-        <InkDraw items={ground.items} start={-30} dur={2} hatchAt={0} washAt={0} washDur={1} />
-      </Layer>
-      <Layer depth={1}>
-        <g transform={`translate(1000 ${880 + down}) scale(1.05)`}>
-          <InkDraw items={boot} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-        {a >= 0 &&
-          Array.from({ length: 140 }, (_, i) => {
-            const ang = -Math.PI * (0.05 + hash(i, 1) * 0.9);
-            const v = 1 + hash(i, 2) * 4;
-            const side = i % 2 ? 1 : -1;
-            const x = 1000 + side * (240 + Math.cos(ang) * v * a * 1.4);
-            const yy = 890 + Math.sin(ang) * v * a + 0.02 * a * a;
-            return <circle key={i} cx={x} cy={yy} r={1.5 + hash(i, 3) * 4} fill={pal.moon} stroke={pal.ink} strokeWidth={0.6} opacity={clamp(1 - a / 60)} />;
-          })}
-        {a >= 0 && <Smoke x={1000} y={890} count={14} start={contact} life={60} size={90} spread={3} vy={-0.6} shade={0.2} color="moon" seed="bslow" />}
-      </Layer>
-      <Layer depth={1.5}>
-        <Dust count={50} speed={0.4} color="moon" size={3} seed="bsdust" />
-      </Layer>
-    </Camera>
-  );
+// D. Slow motion: the boot presses into the dust
+const bootSetup = (g: GL) => {
+  const moon = lunarSet(g, { sun: [-0.7, 0.35, 0.25], earth: [-160, 90, -500], earthR: 22, flatAt: [0, 0, 1.4], seed: "step", shadows: 3 });
+  const y0 = moon.hf(0, 0);
+  const patch = printPatch(g);
+  patch.mesh.position.set(0, y0 + 0.002, 0);
+  g.scene.add(patch.mesh);
+  const boot = makeBoot(g);
+  g.scene.add(boot.group);
+  const dust = new Puffs(g.shared, 400, { lit: "#ece6d9", shade: "#9a9284", outline: 0.3, hatch: 0.4, lineSpacing: 3.5, soft: 0.2, rough: 0.45 });
+  g.scene.add(dust.mesh);
+  const grains = new Glows(g.shared, 300, "#a59f92", 0.2);
+  g.scene.add(grains.mesh);
+  if (g.shadow) g.shadow.center.set(0, y0, 0);
+  return (f: number) => {
+    // slow motion: 1 frame = 1/90 s
+    const T = f / 90;
+    const touch = 0.2;
+    const down = Math.min(1, T / touch);
+    const e = 1 - Math.pow(1 - down, 2);
+    boot.group.position.set(0, y0 + 0.42 * (1 - e) - 0.028 * Math.min(1, Math.max(0, (T - touch) / 0.1)), 0.02);
+    boot.group.rotation.set(0.22 * (1 - e), 0.15, 0);
+    patch.mat.uniforms.uPress.value = Math.min(1, Math.max(0, (T - touch + 0.02) / 0.1));
+    driveCamera(
+      g,
+      [
+        { f: 0, pos: [0.75, y0 + 0.2, 0.95], look: [0, y0 + 0.12, 0], fov: 40 },
+        { f: 45, pos: [0.62, y0 + 0.16, 0.8], look: [0, y0 + 0.08, 0], fov: 38 },
+      ],
+      f,
+      0.004,
+      12,
+    );
+    // dust kicked from the sole rim, arcing slowly in 1/6 g
+    const list: Puff[] = [];
+    const gr: Puff[] = [];
+    const age0 = T - touch;
+    if (age0 > 0)
+      for (let i = 0; i < 220; i++) {
+        const a = hash(i, 41) * 6.28;
+        const sp = 0.25 + hash(i, 42) * 0.55;
+        const up = 0.25 + hash(i, 43) * 0.6;
+        const age = age0 - hash(i, 44) * 0.08;
+        if (age < 0) continue;
+        const x = Math.cos(a) * (0.08 + sp * age);
+        const z = Math.sin(a) * (0.17 + sp * age);
+        const y = y0 + 0.01 + up * age - 0.81 * age * age;
+        if (y < y0 - 0.01) continue;
+        if (i < 120) list.push({ x, y, z, size: 0.012 + age * 0.05, alpha: 0.7 * Math.max(0, 1 - age / 0.6), seed: hash(i, 45) * 9 });
+        else gr.push({ x, y, z, size: 0.004, alpha: 0.9 });
+      }
+    dust.set(list, g.camera);
+    grains.set(gr, g.camera);
+  };
 };
 
-// E. The flag stands on the Moon
-const MoonFlagShot: React.FC = () => {
-  const pal = usePalette();
-  const earth = memo("dr:earth2", () => earthItems(90));
-  const ground = memo("dr:fground", () => lunarGround(640, "fgm"));
-  const astro = memo("dr:astro", () => astronautItems(260));
-  const lm = memo("dr:lm2", () => lmItems(40));
-  return (
-    <Camera keys={[{ f: 0, z: 1.0, x: -30 }, { f: 45, z: 1.08, x: 30 }]} handheld={3} seed={85}>
-      <Layer depth={0.05}>
-        <rect x={-400} y={-400} width={2720} height={1900} fill={pal.space} />
-        <Stars count={140} h={800} y={-200} seed="mfstars" />
-        <g transform="translate(420 230)">
-          <InkDraw items={earth} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-      </Layer>
-      <Layer depth={0.6}>
-        <InkDraw items={ground.items} start={-30} dur={2} hatchAt={0} washAt={0} washDur={1} />
-        <g transform="translate(1560 700)">
-          <InkDraw items={lm} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-      </Layer>
-      <Layer depth={1}>
-        <line x1={760} y1={880} x2={760} y2={300} stroke={pal.metal} strokeWidth={9} />
-        <line x1={760} y1={880} x2={760} y2={300} stroke={pal.ink} strokeWidth={2} />
-        <line x1={760} y1={308} x2={1180} y2={308} stroke={pal.metal} strokeWidth={6} />
-        <Flag x={766} y={310} w={420} h={240} amp={0.25} speed={0.35} waves={1.2} stars={50} droop={0.05} />
-        <g transform="translate(1180 890)">
-          <InkDraw items={astro} start={-30} dur={2} washAt={0} washDur={1} />
-        </g>
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={40} speed={0.3} color="moon" size={2.6} seed="mfdust" />
-      </Layer>
-    </Camera>
-  );
+// E. The flag on the Moon: the astronaut salutes; LM behind; Earth above
+const flagSetup = (g: GL) => {
+  const moon = lunarSet(g, { sun: [0.55, 0.3, 0.6], earth: [-40, 70, -260], earthR: 14, flatAt: [0, 0, 12], seed: "base", shadows: 16 });
+  const y0 = moon.hf(0, 0);
+  const lm = makeLM(g);
+  lm.group.position.set(4.2, moon.hf(4.2, -13), -13);
+  lm.group.rotation.y = -0.4;
+  g.scene.add(lm.group);
+  const flag = makeFlag(g, { w: 1.5, h: 0.9, stars: 50, wind: 0.04, speed: 0.4, droop: 0.02, rod: true, wrinkle: 1 });
+  flag.mesh.position.set(-1.6, y0 + 2.05, -0.6);
+  flag.mesh.rotation.y = 0.35;
+  g.scene.add(flag.mesh);
+  const poleM = g.ink({ color: "#d9d6cf", mode: "v", scale: 20, spec: 0.8 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 2.2, 10), poleM);
+  pole.position.set(-1.6, y0 + 1.05, -0.6);
+  g.scene.add(pole);
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.55, 8), poleM);
+  rod.rotation.z = Math.PI / 2;
+  rod.position.set(0.55, 0, 0);
+  flag.mesh.add(rod);
+  const astro = makeFigure(g, "apollo");
+  astro.root.position.set(1.3, y0, 0.8);
+  astro.root.rotation.y = 0.25;
+  g.scene.add(astro.root);
+  if (g.shadow) g.shadow.center.set(2, y0, -2);
+  return (f: number, t: number) => {
+    const k = Math.min(1, f / 14);
+    astro.pose({
+      bend: 0.06,
+      rSh: [1.25 * k, 0.55 * k, 0],
+      rEl: 0.3 + 1.9 * k,
+      lSh: [0.1, 0.18, 0],
+      lEl: 0.3,
+      lHip: [0.05, 0.08],
+      rHip: [-0.05, 0.1],
+      lKn: 0.08,
+      rKn: 0.1,
+      neck: -0.05 + Math.sin(t) * 0.02,
+    });
+    driveCamera(
+      g,
+      [
+        { f: 0, pos: [3.2, y0 + 1.3, 5.6], look: [0.8, y0 + 1.25, 0], fov: 42 },
+        { f: 45, pos: [4.1, y0 + 1.4, 4.9], look: [0.8, y0 + 1.3, -0.2], fov: 40 },
+      ],
+      f,
+      0.006,
+      13,
+    );
+  };
 };
+
+const IgnitionShot: React.FC = () => <GLShot setup={ignitionSetup} flood={{ at: 1, dur: 16, origin: [940, 860] }} />;
+const ClearShot: React.FC = () => <GLShot setup={clearSetup} />;
+const LMShot: React.FC = () => <GLShot setup={lmSetup} />;
+const BootShot: React.FC = () => <GLShot setup={bootSetup} />;
+const FlagShot: React.FC = () => <GLShot setup={flagSetup} />;
 
 export const drop: SceneDef = {
   id: "drop",
@@ -233,8 +286,8 @@ export const drop: SceneDef = {
     { from: 0, dur: c(1), el: <IgnitionShot />, enter: "cut", name: "ignition + colour flood" },
     { from: c(1), dur: c(2) - c(1), el: <ClearShot />, enter: "punch", palette: "color", name: "clears the tower" },
     { from: c(2), dur: c(3) - c(2), el: <LMShot />, enter: "whipDown", palette: "color", name: "lunar module" },
-    { from: c(3), dur: c(4.5) - c(3), el: <BootSlowShot />, enter: "flash", palette: "color", name: "boot slow motion" },
-    { from: c(4.5), dur: c(6) - c(4.5), el: <MoonFlagShot />, enter: "ink", origin: [760, 400], palette: "color", name: "flag on the moon" },
+    { from: c(3), dur: c(4.5) - c(3), el: <BootShot />, enter: "flash", palette: "color", name: "boot slow motion" },
+    { from: c(4.5), dur: c(6) - c(4.5), el: <FlagShot />, enter: "ink", origin: [760, 400], palette: "color", name: "flag on the moon" },
   ],
   hits: [
     { f: 0, amp: 42, dur: 26, punch: 0.07 },
@@ -245,4 +298,3 @@ export const drop: SceneDef = {
   flashes: [{ f: 0, dur: 12, peak: 1 }],
   Overlay: () => <Quote {...QUOTES.armstrong} start={c(2) + 4} end={c(6)} framesPerWord={3} fontSize={64} />,
 };
-

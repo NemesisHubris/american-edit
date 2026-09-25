@@ -24,6 +24,7 @@ export type SkyOpts = {
   cloudHeight?: number;
   stars?: number;
   sunDir?: THREE.Vector3; // defaults to the shared light direction
+  paper?: number; // how far the gradient is lifted towards paper white
 };
 
 const VERT = /* glsl */ `
@@ -65,6 +66,7 @@ uniform float uCloudHeight;
 uniform float uStars;
 uniform float uTime;
 uniform float uSS;
+uniform float uPaperMix;
 layout(location = 0) out vec4 gColor;
 layout(location = 1) out vec4 gData;
 ${NOISE}
@@ -86,7 +88,7 @@ void main() {
   vec3 c = y > 0.0 ? mix(uHorizon, uTop, pow(clamp(y / 0.75, 0.0, 1.0), 0.9)) : mix(uHorizon, uBottom, clamp(-y / 0.15, 0.0, 1.0));
   float dark = 1.0 - dot(c, vec3(0.299, 0.587, 0.114));
   // engraving: the paper carries the light, lines carry the tone
-  c = mix(c, vec3(1.0, 0.98, 0.94), 0.35);
+  c = mix(c, vec3(1.0, 0.98, 0.94), uPaperMix);
 
   vec3 sd = normalize(uSkySun);
   float cosA = dot(d, sd);
@@ -168,6 +170,7 @@ export const makeSky = (shared: Shared, o: SkyOpts = {}) => {
     uStars: { value: o.stars ?? 0 },
     uTime: shared.uTime,
     uSS: shared.uSS,
+    uPaperMix: { value: o.paper ?? 0.3 },
     uNoiseTex: shared.uNoiseTex,
   };
   const mat = new THREE.RawShaderMaterial({

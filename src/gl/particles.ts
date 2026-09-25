@@ -358,3 +358,108 @@ export const cumulus = (cx: number, cy: number, cz: number, w: number, h: number
   }
   return out;
 };
+
+// --- 3D engraved smoke ----------------------------------------------------------
+// Billows as instanced lumpy spheres drawn with the ink material: real contours,
+// hatched shadow sides, fire-lit undersides; they dissolve (noise holes) as they
+// fade. Takes the same Puff lists as the sprite system.
+import type { GL } from "./GLShot";
+import { smoothIco } from "./geo";
+import { InkOpts } from "./materials";
+
+const lumpyGeo = (() => {
+  let cache: THREE.BufferGeometry | null = null;
+  return () => {
+    if (cache) return cache;
+    const g = smoothIco(1, 4);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    const v = new THREE.Vector3();
+    for (let k = 0; k < p.count; k++) {
+      v.fromBufferAttribute(p, k).normalize();
+      // a few big lobes + small cauliflower bumps
+      let b = 1;
+      const lobes: [number, number, number][] = [
+        [0.7, 0.5, 0.2],
+        [-0.6, 0.6, -0.3],
+        [0.1, 0.8, -0.6],
+        [-0.2, 0.3, 0.9],
+        [0.5, -0.2, -0.8],
+        [-0.8, -0.1, 0.4],
+      ];
+      for (const [x, y, z] of lobes) {
+        const d = v.x * x + v.y * y + v.z * z;
+        b += Math.max(0, d - 0.55) * 0.55;
+      }
+      b += (Math.sin(v.x * 11 + v.y * 7) * Math.sin(v.z * 9 - v.y * 5)) * 0.035;
+      p.setXYZ(k, v.x * b, v.y * b * 0.9, v.z * b);
+    }
+    g.computeVertexNormals();
+    cache = g;
+    return g;
+  };
+})();
+
+export class Smoke {
+  mesh: THREE.InstancedMesh;
+  mat: THREE.RawShaderMaterial;
+  max: number;
+  private m4 = new THREE.Matrix4();
+  private q = new THREE.Quaternion();
+  private e = new THREE.Euler();
+  constructor(g: GL, max: number, o: InkOpts & { heatCol?: ColorIn; fire?: boolean } = {}) {
+    this.max = max;
+    this.mat = g.ink({
+      color: "#f3eee6",
+      mode: "screen",
+      angle: 35,
+      scale: 4.5,
+      shade: 0.6,
+      cross: 0.35,
+      rim: 0.8,
+      rimPow: 2,
+      instanced: true,
+      instColor: true,
+      castShadow: false,
+      uniforms: { uHeatCol: { value: col(o.heatCol ?? "#ff9a3c") } },
+      fragDecl: "uniform vec3 uHeatCol;",
+      frag: /* glsl */ `
+        // dissolve as the billow fades (vInst.r), fire-lit from below (vInst.g)
+        float under = clamp(-N.y * 0.6 + 0.5, 0.0, 1.0);
+        float heat = clamp(vInst.g * (0.55 + under * 0.8), 0.0, 1.0);
+        albedo = mix(albedo, uHeatCol, heat);
+        shadeMul = 1.0 - heat * 0.6;
+        emis += uHeatCol * heat * heat * 0.45;
+        hatchMul = 1.0 - heat * 0.5;
+      ` + (o.fire ? /* glsl */ `
+        // fire: white-hot core facing the camera, orange rim, flickering tongues
+        float facing = max(dot(N, normalize(cameraPosition - vWorld)), 0.0);
+        float fl = tn3(vWorld * 0.35 + vec3(0.0, -uTime * 3.0, 0.0));
+        float core = smoothstep(0.35, 0.95, facing * (0.7 + fl * 0.6)) * (1.0 - vInst.r);
+        albedo = mix(vec3(0.85, 0.28, 0.05), vec3(1.0, 0.72, 0.25), facing);
+        emis = mix(vec3(0.9, 0.3, 0.04), vec3(1.4, 1.2, 0.8), core) * (0.8 + fl * 0.5);
+        shadeMul = 0.0;
+        hatchMul = 0.25;
+      ` : ""),
+      ...o,
+    });
+    this.mesh = new THREE.InstancedMesh(lumpyGeo(), this.mat, max);
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3);
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+  }
+  set(list: Puff[], _cam?: THREE.Camera) {
+    const n = Math.min(this.max, list.length);
+    for (let i = 0; i < n; i++) {
+      const p = list[i];
+      const s = p.size * Math.min(1, 0.25 + p.alpha * 1.6);
+      this.e.set((p.seed ?? 0) * 1.3, (p.seed ?? 0) * 2.1 + (p.rot ?? 0), (p.seed ?? 0) * 0.7);
+      this.q.setFromEuler(this.e);
+      this.m4.compose(new THREE.Vector3(p.x, p.y, p.z), this.q, new THREE.Vector3(s, s, s));
+      this.mesh.setMatrixAt(i, this.m4);
+      this.mesh.instanceColor!.setXYZ(i, 1 - p.alpha, p.heat ?? 0, p.seed ?? 0);
+    }
+    this.mesh.count = n;
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.instanceColor!.needsUpdate = true;
+  }
+}

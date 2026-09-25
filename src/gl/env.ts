@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { rng } from "../lib/random";
 import { col, ColorIn, InkOpts } from "./materials";
 import { fbm2 } from "./noise";
-import { merge, terrain } from "./geo";
+import { merge, smoothIco, terrain } from "./geo";
 import type { GL } from "./GLShot";
 
 // Water: gerstner-ish vertex waves, fresnel sky tint, sun/moon glitter, engraved
@@ -161,7 +161,7 @@ export const cloudGeo = (seed: string, n = 14, spread: [number, number, number] 
     // bigger lumps in the middle, flat bottom
     const mid = 1 - Math.abs(x) / (spread[0] * 0.6);
     const y = Math.max(0, mid) * spread[1] * (0.4 + r() * 0.6);
-    const sg = new THREE.IcosahedronGeometry(s * (0.6 + 0.5 * Math.max(0, mid)), 4);
+    const sg = smoothIco(s * (0.6 + 0.5 * Math.max(0, mid)), 4);
     const p = sg.attributes.position as THREE.BufferAttribute;
     const sd = r() * 100;
     for (let k = 0; k < p.count; k++) {
@@ -258,7 +258,7 @@ export const makeBirds = (g: GL, o: { count: number; from: [number, number, numb
 
 // Scrub / bushes: instanced lumpy blobs along the ground
 export const makeBushes = (g: GL, o: { count: number; x: [number, number]; z: [number, number]; y?: number | ((x: number, z: number) => number); size: [number, number]; color?: ColorIn; seed?: string; flat?: number }) => {
-  const base = new THREE.IcosahedronGeometry(1, 3);
+  const base = smoothIco(1, 3);
   const p = base.attributes.position as THREE.BufferAttribute;
   for (let k = 0; k < p.count; k++) {
     const v = new THREE.Vector3().fromBufferAttribute(p, k);

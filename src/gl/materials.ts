@@ -36,8 +36,8 @@ export const makeShared = () => ({
 });
 export type Shared = ReturnType<typeof makeShared>;
 
-export type HatchMode = "screen" | "u" | "v" | "world" | "obj";
-const MODES: Record<HatchMode, number> = { screen: 0, u: 1, v: 2, world: 3, obj: 4 };
+export type HatchMode = "screen" | "u" | "v" | "world" | "obj" | "stipple";
+const MODES: Record<HatchMode, number> = { screen: 0, u: 1, v: 2, world: 3, obj: 4, stipple: 5 };
 
 export type InkOpts = {
   color?: ColorIn;
@@ -60,6 +60,7 @@ export type InkOpts = {
   wobble?: number;
   side?: THREE.Side;
   instanced?: boolean;
+  instColor?: boolean; // per-instance vec3 (instanceColor) available as vInst
   vcolor?: boolean;
   vertex?: string; // GLSL: may modify vec3 p, vec3 n (object space); has uTime, uv
   vertexDecl?: string;
@@ -89,6 +90,9 @@ in mat4 instanceMatrix;
 #ifdef VCOLOR
 in vec3 color;
 #endif
+#ifdef ICOLOR
+in vec3 instanceColor;
+#endif
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
@@ -99,6 +103,7 @@ out vec2 vUv;
 out vec3 vObj;
 out float vViewZ;
 out vec3 vCol;
+out vec3 vInst;
 ${NOISE}
 ${o.vertexDecl ?? ""}
 void main() {
@@ -119,6 +124,11 @@ void main() {
 #else
   vCol = vec3(1.0);
 #endif
+#ifdef ICOLOR
+  vInst = instanceColor;
+#else
+  vInst = vec3(0.0);
+#endif
   vec4 mv = viewMatrix * w;
   vViewZ = -mv.z;
   gl_Position = projectionMatrix * mv;
@@ -133,6 +143,7 @@ in vec2 vUv;
 in vec3 vObj;
 in float vViewZ;
 in vec3 vCol;
+in vec3 vInst;
 uniform mat4 viewMatrix;
 uniform vec3 cameraPosition;
 uniform vec3 uAlbedo;
@@ -248,9 +259,14 @@ void main() {
   float dark = clamp(1.0 - lum, 0.0, 1.0);
   vec3 shaded = albedo * mix(vec3(1.0), light, uShade * shadeMul) + uSunCol * spec;
 
-  // engraving lines
+  // engraving lines (or stipple dots for sand, dust, stone)
   float ink = 0.0;
-  if (uHatch > 0.0) {
+  if (uMode == 5 && uHatch > 0.0) {
+    vec2 fc = gl_FragCoord.xy / uSS;
+    float t = clamp(dark * hatchMul + extraInk, 0.0, 1.0);
+    float cell = tvn(fc * 0.9) * 0.6 + tvn(fc * 2.3 + 7.0) * 0.4;
+    ink = smoothstep(1.0 - t * 0.9, 1.0 - t * 0.9 + 0.08, cell) * uHatch;
+  } else if (uHatch > 0.0) {
     float c1, c2;
     if (uMode == 0) {
       vec2 q = gl_FragCoord.xy / (uScale * uSS);
@@ -297,6 +313,7 @@ export const inkMaterial = (shared: Shared, o: InkOpts = {}) => {
   const defines: Record<string, number> = {};
   if (o.instanced) defines.INSTANCED = 1;
   if (o.vcolor) defines.VCOLOR = 1;
+  if (o.instColor) defines.ICOLOR = 1;
   const id = o.edges === 0 ? 0 : o.id ?? nextId++;
   const m = new THREE.RawShaderMaterial({
     glslVersion: THREE.GLSL3,

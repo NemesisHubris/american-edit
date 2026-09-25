@@ -45,14 +45,18 @@ export const GLShot: React.FC<{ setup: Setup; ss?: number; flood?: Flood; color?
       const t = f / fps;
       s.g.shared.uTime.value = t;
       s.update(f, t);
-      const mix = color ?? pal.mode === "color" ? 1 : 0;
+      let mix = (color ?? pal.mode === "color") ? 1 : 0;
       let fl: { x: number; y: number; r: number } | undefined;
-      if (flood && f >= flood.at) {
-        const p = Math.min(1, (f - flood.at) / flood.dur);
-        const e = 1 - Math.pow(1 - p, 2.2);
-        fl = { x: flood.origin[0] / W, y: 1 - flood.origin[1] / H, r: e * 2.4 + 0.01 };
+      if (flood) {
+        if (f >= flood.at + flood.dur) mix = 1;
+        else if (f >= flood.at) {
+          const p = (f - flood.at) / flood.dur;
+          const e = 1 - Math.pow(1 - p, 2.2);
+          fl = { x: flood.origin[0] / W, y: 1 - flood.origin[1] / H, r: e * 2.4 + 0.01 };
+          mix = 0;
+        } else mix = 0;
       }
-      s.g.render(fl && f < flood!.at + flood!.dur ? 0 : mix, fl && f < flood!.at + flood!.dur ? fl : undefined);
+      s.g.render(mix, fl);
       continueRender(handle);
     } catch (e) {
       cancelRender(e as Error);
