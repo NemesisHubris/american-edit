@@ -463,3 +463,45 @@ export class Smoke {
     this.mesh.instanceColor!.needsUpdate = true;
   }
 }
+
+// Glass: only rim light, specular glints and a faint tint are added on top of
+// what's behind it (the filament stays visible); writes nothing to the G-buffer.
+export const glassMaterial = (shared: { uSunDir: THREE.IUniform; uTime: THREE.IUniform }, tint = "#cfe8ff", str = 1) =>
+  addBlend(
+    new THREE.RawShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      uniforms: { uSunDir: shared.uSunDir, uTint: { value: col(tint) }, uStr: { value: str }, uGlow: { value: 0 } },
+      vertexShader: /* glsl */ `
+        precision highp float;
+        in vec3 position; in vec3 normal;
+        uniform mat4 modelMatrix; uniform mat4 viewMatrix; uniform mat4 projectionMatrix;
+        out vec3 vN; out vec3 vV;
+        void main() {
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vN = normalize(mat3(modelMatrix) * normal);
+          vV = normalize(vec3(inverse(viewMatrix)[3]) - w.xyz);
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision highp float;
+        in vec3 vN; in vec3 vV;
+        uniform vec3 uSunDir; uniform vec3 uTint; uniform float uStr; uniform float uGlow;
+        layout(location = 0) out vec4 gColor;
+        layout(location = 1) out vec4 gData;
+        void main() {
+          vec3 N = normalize(vN);
+          if (!gl_FrontFacing) N = -N;
+          float fres = pow(1.0 - abs(dot(N, vV)), 3.0);
+          vec3 H = normalize(uSunDir + vV);
+          float spec = pow(max(dot(N, H), 0.0), 120.0);
+          vec3 c = uTint * (fres * 0.55 + 0.03) + vec3(1.0) * spec * 1.5 + vec3(1.0, 0.8, 0.5) * uGlow * (0.15 + fres * 0.4);
+          gColor = vec4(c * uStr, 0.0);
+          gData = vec4(0.0);
+        }
+      `,
+    }),
+  ) as THREE.RawShaderMaterial;

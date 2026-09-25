@@ -1,530 +1,617 @@
-// 5. AMERICAN INGENUITY — 1869. Faster cuts: locomotive charging at camera,
-// golden spike, Edison's lamp, Wright Flyer, Model T line, Hoover Dam,
-// Golden Gate in fog, the Empire State Building rising.
-import { AbsoluteFill, useCurrentFrame } from "remotion";
-import { Camera, Layer } from "../components/Camera";
-import { InkDraw } from "../components/InkDraw";
-import { Paper } from "../components/Parchment";
-import { Dust, Fog, Smoke, Sparks } from "../components/Particles";
-import { Birds, Clouds, EngravedSky, Sun } from "../components/Sky";
-import { InkSea, Pour } from "../components/Water";
-import { BlueprintGrid, BlueprintMorph } from "../components/Blueprint";
+// 5. AMERICAN INGENUITY — "1869". The locomotive charges at camera; the golden
+// spike is hammered home; a filament glows to a flare; the Wright Flyer lifts
+// off the dunes and banks past; a Model T rolls down the line; water thunders
+// through Hoover Dam; the Golden Gate emerges as fog rolls away; the Empire
+// State Building rises floor by floor. Inventions morph blueprint -> engraving.
+import * as THREE from "three";
 import { YearSlam } from "../components/YearSlam";
 import { Quote } from "../components/WordPop";
 import { QUOTES } from "../quotes";
-import { Loco3D, stackTop } from "../art/Loco3D";
-import { Flyer3D } from "../art/Flyer3D";
-import { bulbGeo, damItems, empireItems, ESB, ggTower, maulItems, modelTBody, modelTWheel, railScene, spikeItems } from "../art/ingenuity";
-import { F, grass, groundHatch, HT, L } from "../art/kit";
-import { hatch, polyD, Pt, rectP, smoothD } from "../lib/engrave";
-import { clamp, easeIn, easeInOut, easeOut, lerp, memo, ramp, TAU } from "../lib/math";
-import { usePalette } from "../lib/palette";
-import { hash } from "../lib/random";
-import { DEFAULT_CAM, path3, Pose } from "../lib/three";
-import { useUid } from "../lib/uid";
 import { sceneClock } from "../timeline";
+import { hash, rng } from "../lib/random";
+import { GLShot, GL, driveCamera, drawIn } from "../gl/GLShot";
+import { makeSky } from "../gl/sky";
+import { makeLoco, makeTrack, makePoles, spikeGeo, bulbGeo, flyerGeo, propGeo, modelTGeo, damGeo, ggTowerGeo, esbLevels } from "../gl/models/industry";
+import { makeGround, makeWater, makeReeds } from "../gl/env";
+import { makeFigure } from "../gl/figure";
+import { box, cyl, merge, terrain, tube } from "../gl/geo";
+import { fbm2, ridged2 } from "../gl/noise";
+import { emit, glassMaterial, Glows, Puff, Puffs, Smoke } from "../gl/particles";
 import type { SceneDef } from "./types";
 
 const c = sceneClock("ingenuity");
-
-// A. Steam locomotive charging at the camera
-const locoPose = (f: number): Pose => {
-  const t = clamp(f / 62);
-  const z = 30 - 27.2 * Math.pow(t, 1.15);
-  return { pos: [-2.2, -1.75, z], yaw: 0.03 };
-};
-
-const LocoShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const at = locoPose(f);
-  const dist = 30 - at.pos[2];
-  const cam = DEFAULT_CAM;
-  const rails: string[] = [];
-  const ties: string[] = [];
-  const poles: React.ReactNode[] = [];
-  for (const x of [-3.12, -1.68]) rails.push(path3([[x, -1.75, 0.5], [x, -1.75, 200]], cam));
-  const tieOff = (dist * 1.0) % 0.8;
-  for (let z = 0.6 - tieOff + 0.8; z < 120; z += 0.8) ties.push(path3([[-3.6, -1.76, z], [-1.2, -1.76, z]], cam));
-  for (let i = 0; i < 14; i++) {
-    const z = 8 + i * 22 - ((f * 0.5) % 22);
-    const top = path3([[3.2, -1.75, z], [3.2, 5, z]], cam);
-    const arm = path3([[2.4, 4.6, z], [4.0, 4.6, z]], cam);
-    poles.push(<path key={i} d={top + arm} stroke={pal.ink} strokeWidth={Math.max(1, 30 / z)} fill="none" />);
-  }
-  const wire = path3(Array.from({ length: 30 }, (_, i) => [2.6, 4.5 - Math.sin((i % 3) / 3) * 0.1, 4 + i * 10] as [number, number, number]), cam);
-  const geo = memo("ing:plain", () => {
-    const mount: Pt[] = [[-400, 560]];
-    for (let x = -400; x <= 2400; x += 30) mount.push([x, 540 - Math.max(0, Math.sin(x / 150) * 70 + Math.sin(x / 61) * 20 + Math.sin(x / 400) * 40)]);
-    mount.push([2400, 560]);
-    return [F(polyD(mount), "skyDeep", 0.3), HT(hatch([mount], { angle: 70, spacing: 4, seed: "lm" }), 1, 0.45), L(smoothD(mount.slice(1, -1)), 1.6)];
-  });
-  const st = stackTop(at, cam);
-  return (
-    <Camera keys={[{ f: 0, z: 1.0 }]} handheld={3 + clamp(f / 60) * 6} seed={51}>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.35} />
-        <Sun x={1500} y={330} r={60} spin={0.2} />
-        <Clouds speed={1.5} clouds={[{ x: 100, y: 60, w: 520, h: 130, seed: "lc1" }, { x: 1100, y: 20, w: 420, h: 110, seed: "lc2" }]} />
-        <InkDraw items={geo} start={-6} dur={8} />
-      </Layer>
-      <Layer depth={1}>
-        <rect x={-400} y={540} width={2720} height={900} fill={pal.sand} opacity={0.55} />
-        <path d={groundHatch(-400, 2320, 548, 1300, "lg", 7)} stroke={pal.ink} strokeWidth={1} opacity={0.6} fill="none" />
-        <path d={ties.join("")} stroke={pal.wood} strokeWidth={4} fill="none" />
-        <path d={ties.join("")} stroke={pal.ink} strokeWidth={1.2} fill="none" opacity={0.8} />
-        <path d={rails.join("")} stroke={pal.ink} strokeWidth={5} fill="none" />
-        <path d={wire} stroke={pal.ink} strokeWidth={1.2} fill="none" />
-        {poles}
-        <Smoke x={0} y={0} emitterAt={(fr) => stackTop(locoPose(fr), cam) ?? [0, 0]} rate={0.9} life={36} size={46 + clamp(f / 60) * 70} vx={2} vy={-5} spread={2} wind={4} shade={0.6} seed="lsmk" />
-        <Loco3D at={at} wheelAngle={-dist / 0.87} cam={cam} lamp={0.9 + 0.1 * Math.sin(f)} />
-        {st && <Sparks x={st[0]} y={st[1]} t0={Math.floor(f / 8) * 8} count={10} speed={10} life={14} gravity={-0.2} seed={`ls${Math.floor(f / 8)}`} />}
-      </Layer>
-      <Layer depth={1.6}>
-        <Dust count={50} speed={3} color="inkSoft" seed="ldust" size={2.5} />
-      </Layer>
-    </Camera>
-  );
-};
-
-// B. The golden spike is hammered home, sparks flying
-const SpikeShot: React.FC<{ hits: number[] }> = ({ hits }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const rail = memo("ing:rail", railScene);
-  const spike = memo("ing:spike", spikeItems);
-  const maul = memo("ing:maul", maulItems);
-  let ang = -48;
-  let sink = 0;
-  for (const h of hits) {
-    const a = f - h;
-    if (a >= -5 && a < 0) ang = lerp(-48, 0, easeIn((a + 5) / 5));
-    else if (a >= 0 && a < 12) ang = lerp(0, -48, easeInOut(clamp((a - 2) / 10)));
-    if (a >= 0) sink += 16;
-  }
-  const spikeY = 520 + sink;
-  return (
-    <Camera keys={[{ f: 0, z: 1.12, y: 20 }, { f: 45, z: 1.2, y: 0 }]} handheld={4} seed={52}>
-      <Layer depth={0.15}>
-        <Paper />
-        <EngravedSky h={700} y={-300} dark={0.3} />
-        <g opacity={0.8}>
-          {[340, 1560].map((x, i) => (
-            <g key={i} transform={`translate(${x} 380) scale(${i ? -0.5 : 0.5})`}>
-              <path d="M-160 0H200V-60H120V-160H60V-70H-60V-100H-120V-40H-160Z" fill={pal.ink} />
-              <circle cx={-80} cy={10} r={36} fill="none" stroke={pal.ink} strokeWidth={6} />
-              <circle cx={40} cy={10} r={46} fill="none" stroke={pal.ink} strokeWidth={6} />
-              <path d="M200 20L260 -10V30Z" fill={pal.ink} />
-            </g>
-          ))}
-          <path d={Array.from({ length: 36 }, (_, i) => `M${540 + i * 24} 420a12 12 0 1 1 0.1 0`).join("")} fill={pal.inkSoft} />
-        </g>
-      </Layer>
-      <Layer depth={1}>
-        <InkDraw items={rail} start={-4} dur={10} hatchAt={2} washAt={2} />
-        <defs>
-          <clipPath id="spikeclip">
-            <rect x={0} y={0} width={1920} height={712} />
-          </clipPath>
-        </defs>
-        <g clipPath="url(#spikeclip)">
-          <g transform={`translate(1040 ${spikeY}) scale(1.5)`}>
-            <InkDraw items={spike} start={-2} dur={8} washAt={0} washDur={4} />
-          </g>
-        </g>
-        {hits.map((h, i) => (
-          <Sparks key={i} x={1040} y={spikeY - 10} t0={h} count={50} speed={24} gravity={0.9} life={20} spread={Math.PI * 1.1} seed={`gs${i}`} />
-        ))}
-        <g transform={`translate(1880 ${spikeY - 80}) rotate(${ang}) scale(1.35)`}>
-          <InkDraw items={maul} start={-2} dur={8} washAt={0} washDur={4} />
-        </g>
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={30} speed={1} color="gold" seed="gdust" />
-      </Layer>
-    </Camera>
-  );
-};
-
-// C. Edison's lamp: blueprint -> engraving, filament brightens until it flares
-const BulbShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const bulb = memo("ing:bulb", bulbGeo);
-  const glow = ramp(f, 12, 38, easeIn);
-  const flare = ramp(f, 36, 44, easeOut);
-  const Inner: React.FC = () => {
-    const pal = usePalette();
-    const uid = useUid("blb");
-    return (
-      <Camera keys={[{ f: 0, z: 1.0 }, { f: 45, z: 1.14 }]} handheld={3} seed={53}>
-        <Layer depth={0.3}>
-          <Paper tint={pal.mode === "blueprint" ? undefined : pal.night} />
-          <BlueprintGrid label="ELECTRIC LAMP" sub="No. 223,898 — T. A. EDISON" />
-          {pal.mode !== "blueprint" && <path d={hatch([rectP(-400, -400, 2720, 1900)], { angle: 40, spacing: 5, seed: "lab" })} stroke={pal.ink} strokeWidth={1} opacity={0.6} />}
-        </Layer>
-        <Layer depth={1}>
-          <defs>
-            <radialGradient id={uid}>
-              <stop offset="0" stopColor="#fffdf2" stopOpacity={1} />
-              <stop offset="0.3" stopColor={pal.glow} stopOpacity={0.8} />
-              <stop offset="1" stopColor={pal.flame} stopOpacity={0} />
-            </radialGradient>
-          </defs>
-          <g transform="translate(960 470) scale(1.35)">
-            {pal.mode !== "blueprint" && <circle cx={0} cy={-60} r={140 + glow * 360 + flare * 600} fill={`url(#${uid})`} opacity={glow} />}
-            <InkDraw items={bulb.items} start={-2} dur={8} washAt={0} washDur={4} />
-            <path d={bulb.filament} fill="none" stroke={pal.mode === "blueprint" ? pal.ink : glow > 0.3 ? "#fffdf2" : pal.ink} strokeWidth={4 + glow * 3} />
-            {pal.mode === "blueprint" && (
-              <g stroke={pal.ink} fill={pal.ink} fontFamily="monospace" fontSize={16}>
-                <path d="M-240 -200V300M-250 -200H-230M-250 300H-230" strokeWidth={1.5} fill="none" />
-                <text x={-300} y={60} stroke="none" transform="rotate(-90 -300 60)">
-                  120 mm
-                </text>
-                <path d="M-190 330H190M-190 320V340M190 320V340" strokeWidth={1.5} fill="none" />
-                <text x={-30} y={360} stroke="none">
-                  ⌀ 70
-                </text>
-              </g>
-            )}
-            {pal.mode !== "blueprint" &&
-              glow > 0.4 &&
-              Array.from({ length: 16 }, (_, i) => {
-                const a = (i / 16) * TAU + f * 0.02;
-                const r0 = 230;
-                const r1 = 230 + (glow - 0.4) * 500 + flare * 400;
-                return <line key={i} x1={Math.cos(a) * r0} y1={-60 + Math.sin(a) * r0} x2={Math.cos(a) * r1} y2={-60 + Math.sin(a) * r1} stroke={pal.glow} strokeWidth={3} opacity={0.5} />;
-              })}
-          </g>
-        </Layer>
-      </Camera>
-    );
-  };
-  return (
-    <AbsoluteFill>
-      <BlueprintMorph from={4} to={16}>
-        <Inner />
-      </BlueprintMorph>
-      <AbsoluteFill style={{ backgroundColor: "#fffdf2", opacity: flare * 0.9 }} />
-    </AbsoluteFill>
-  );
-};
-
-// D. Wright Flyer lifts off the dunes and banks past the camera
-const flyerPose = (f: number): Pose => {
-  const t = clamp(f / 62);
-  const z = lerp(46, 3.5, Math.pow(t, 1.35));
-  const x = lerp(-9, 5.5, Math.pow(t, 1.5));
-  const lift = clamp((t - 0.18) / 0.8);
-  const y = -1.5 + easeIn(lift) * 3.2;
-  return { pos: [x, y, z], yaw: -0.35 + t * 0.2, roll: -easeInOut(clamp((t - 0.45) / 0.55)) * 0.55, pitch: -lift * 0.1 };
-};
-
-const FlyerShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const geo = memo("ing:dunes", () => {
-    const d1: Pt[] = [[-400, 1300], [-400, 600], ...Array.from({ length: 30 }, (_, i) => [-400 + i * 100, 580 - Math.max(0, Math.sin(i * 0.4) * 60)] as Pt), [2600, 600], [2600, 1300]];
-    const d2: Pt[] = [[-400, 1300], [-400, 880], [300, 800], [800, 830], [1400, 900], [2000, 860], [2600, 900], [2600, 1300]];
-    return {
-      far: [F(polyD(d1), "sand", 0.7), HT(hatch([d1], { angle: 8, spacing: 5, tone: (x, y) => 0.3 + (y - 540) / 500 + Math.sin(x / 200) * 0.2, threshold: 0.45, seed: "d1" }), 1, 0.6), L(smoothD(d1.slice(2, -2)), 2)],
-      near: [F(smoothD(d2, true), "sand", 0.85), HT(hatch([d2], { angle: -8, spacing: 4.5, tone: (x, y) => 0.25 + (y - 800) / 400, threshold: 0.4, seed: "d2" }), 1, 0.7), L(smoothD(d2.slice(1, -1)), 2.4), HT(grass(-300, 2500, (x) => 860 + Math.sin(x / 300) * 40, "dg", 0.05, 40), 1.6, 0.9)],
-    };
-  });
-  const Inner: React.FC = () => {
-    const pal = usePalette();
-    const rail = path3([[-9, -1.62, 46], [-9, -1.62, 80]], DEFAULT_CAM);
-    return (
-      <Camera keys={[{ f: 0, z: 1.0 }]} handheld={4} seed={54}>
-        <Layer depth={0.1}>
-          <Paper />
-          <BlueprintGrid label="FLYING MACHINE" sub="O. & W. WRIGHT — 1903" />
-          <EngravedSky h={900} y={-300} dark={0.25} />
-          <Clouds speed={2} clouds={[{ x: 200, y: 80, w: 500, h: 130, seed: "fc1" }, { x: 1200, y: 30, w: 420, h: 110, seed: "fc2" }]} />
-          <Birds x0={2000} y0={200} x1={-100} y1={260} dur={80} count={5} seed="gl" />
-        </Layer>
-        <Layer depth={0.4}>
-          <InkDraw items={geo.far} start={-6} dur={8} />
-          <path d={rail} stroke={pal.wood} strokeWidth={4} />
-        </Layer>
-        <Layer depth={1}>
-          <Flyer3D at={flyerPose(f)} prop={f * 0.9} />
-          {f < 20 && <Smoke x={0} y={0} emitterAt={(fr) => [960 + (1100 * flyerPose(fr).pos[0]) / flyerPose(fr).pos[2], 540 + 1100 * 1.6 / flyerPose(fr).pos[2]]} rate={0.5} end={20} life={30} size={30} shade={0.1} color="sand" outline={1} seed="fsand" />}
-        </Layer>
-        <Layer depth={1.3}>
-          <InkDraw items={geo.near} start={-6} dur={8} />
-        </Layer>
-      </Camera>
-    );
-  };
-  return (
-    <BlueprintMorph from={2} to={14}>
-      <Inner />
-    </BlueprintMorph>
-  );
-};
-
-// E. Model T rolls down the assembly line
-const ModelTShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const body = memo("ing:mtb", modelTBody);
-  const wheelI = memo("ing:mtw", modelTWheel);
-  const factory = memo("ing:factory", () => {
-    const items = [F(polyD(rectP(-400, -400, 2720, 1300)), "stone", 0.35)];
-    const wins: string[] = [];
-    for (let x = -300; x < 2300; x += 260) wins.push(polyD(rectP(x, 60, 180, 420)));
-    items.push(F(wins.join(""), "glow", 0.6), L(wins.join(""), 2.4));
-    const mull: string[] = [];
-    for (let x = -300; x < 2300; x += 260) for (let k = 1; k < 4; k++) mull.push(`M${x + k * 45} 60V480`);
-    for (let x = -300; x < 2300; x += 260) for (let k = 1; k < 6; k++) mull.push(`M${x} ${60 + k * 70}H${x + 180}`);
-    items.push(L(mull.join(""), 1.4));
-    items.push(HT(hatch([rectP(-400, -400, 2720, 1300)], { angle: 45, spacing: 6, tone: (x) => 0.45 + Math.sin(x / 130) * 0.1, threshold: 0.45, seed: "fw" }), 1, 0.45));
-    const truss: string[] = [];
-    for (let x = -400; x < 2400; x += 200) truss.push(`M${x} -40L${x + 100} -140L${x + 200} -40M${x} -40H${x + 200}M${x + 100} -140V-40`);
-    items.push(L(truss.join(""), 2));
-    return items;
-  });
-  const Inner: React.FC = () => {
-    const pal = usePalette();
-    const move = f * 4.5;
-    const cars = [-1, 0, 1, 2].map((i) => {
-      const x = 200 + i * 1050 + move;
-      const roll = (-move / 96) * 57.3;
-      return (
-        <g key={i} transform={`translate(${x} 830) scale(0.9)`}>
-          {[-260, 250].map((wx, k) => (
-            <g key={k} transform={`translate(${wx} -96) rotate(${-roll})`}>
-              <InkDraw items={wheelI} start={-10} dur={4} washAt={0} washDur={2} />
-            </g>
-          ))}
-          <InkDraw items={body} start={-4} dur={10} washAt={0} washDur={4} />
-        </g>
-      );
-    });
-    const hoistY = lerp(-220, 380, easeInOut(clamp(f / 40)));
-    return (
-      <Camera keys={[{ f: 0, z: 1.08, x: -40 }, { f: 45, z: 1.14, x: 60 }]} handheld={3} seed={55}>
-        <Layer depth={0.3}>
-          <Paper />
-          <BlueprintGrid label="MODEL T" sub="FORD MOTOR CO. — 1913" />
-          <InkDraw items={factory} start={-6} dur={8} hatchAt={0} washAt={0} washDur={3} />
-        </Layer>
-        <Layer depth={0.8}>
-          <path d={`M-400 850H2400M-400 880H2400`} stroke={pal.ink} strokeWidth={3} />
-          <path d={`M-400 865H2400`} stroke={pal.ink} strokeWidth={10} strokeDasharray="14 18" strokeDashoffset={-move * 1.0} />
-          <path d="M-400 120H2400M-400 140H2400" stroke={pal.ink} strokeWidth={4} />
-          <path d={`M700 130V${hoistY - 300}M1000 130V${hoistY - 300}`} stroke={pal.ink} strokeWidth={2} />
-          <g transform={`translate(860 ${hoistY - 200}) scale(0.6)`} opacity={0.9}>
-            <InkDraw items={body.slice(0, 3)} start={-10} dur={4} washAt={0} washDur={2} />
-          </g>
-          {cars}
-        </Layer>
-        <Layer depth={1.25}>
-          {[0, 1].map((k) => {
-            const x = 180 + k * 1300;
-            const arm = Math.sin(f / 5 + k) * 20;
-            return (
-              <g key={k} fill={pal.ink}>
-                <path d={`M${x - 28} 1080L${x - 22} 800Q${x} 770 ${x + 22} 800L${x + 28} 1080Z`} />
-                <circle cx={x} cy={765} r={26} />
-                <path d={`M${x - 30} 760Q${x} 730 ${x + 30} 760Z`} />
-                <path d={`M${x + 16} 820L${x + 110} ${800 + arm}`} stroke={pal.ink} strokeWidth={16} strokeLinecap="round" />
-              </g>
-            );
-          })}
-          <Sparks x={1600} y={790} t0={Math.floor(f / 10) * 10} count={20} speed={14} life={14} seed={`mt${Math.floor(f / 10)}`} />
-        </Layer>
-      </Camera>
-    );
-  };
-  return (
-    <BlueprintMorph from={2} to={12}>
-      <Inner />
-    </BlueprintMorph>
-  );
-};
-
-// F. Water thunders through Hoover Dam
-const DamShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const dam = memo("ing:dam", damItems);
-  const jets = [
-    { x: 560, y: 560, dir: 1 },
-    { x: 540, y: 640, dir: 1 },
-    { x: 1360, y: 560, dir: -1 },
-    { x: 1380, y: 640, dir: -1 },
-  ];
-  return (
-    <Camera keys={[{ f: 0, z: 1.02, y: 20 }, { f: 60, z: 1.16, y: -20 }]} handheld={6} seed={56}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={600} y={-300} dark={0.3} />
-      </Layer>
-      <Layer depth={0.7}>
-        <InkDraw items={dam} start={-4} dur={24} overlap={0.3} hatchAt={10} washAt={10} />
-        <Pour x={1560} y={-120} w={90} h={900} bulge={-60} lines={24} speed={30} seed="spill" />
-        {jets.map((j, i) => {
-          const d = `M${j.x} ${j.y}Q${j.x + j.dir * 260} ${j.y - 60} ${j.x + j.dir * 420} ${j.y + 300}`;
-          return (
-            <g key={i}>
-              <path d={d} fill="none" stroke={pal.water} strokeWidth={46} opacity={0.6} />
-              <path d={d} fill="none" stroke={pal.foam} strokeWidth={30} strokeDasharray="60 30" strokeDashoffset={-f * 26} />
-              <path d={d} fill="none" stroke={pal.ink} strokeWidth={2} strokeDasharray="30 50" strokeDashoffset={-f * 26} />
-            </g>
-          );
-        })}
-        <Smoke x={960} y={940} rate={1} life={50} size={160} vx={0} vy={-2.5} spread={6} shade={0} color="foam" outline={1} seed="mist" opacity={0.8} />
-      </Layer>
-      <Layer depth={1}>
-        <InkSea top={880} rows={24} amp={16} speed={3} drift={3} seed="river" />
-      </Layer>
-      <Layer depth={1.5}>
-        <Fog y={950} h={260} speed={3} opacity={0.6} color="foam" seed="dfog" />
-        {Array.from({ length: 30 }, (_, i) => {
-          const x = hash(i, 1) * 1920;
-          const y = ((hash(i, 2) * 1080 - f * (6 + hash(i, 3) * 6)) % 1080 + 1080) % 1080;
-          return <circle key={i} cx={x} cy={y} r={2 + hash(i, 4) * 4} fill={pal.foam} opacity={0.7} />;
-        })}
-      </Layer>
-    </Camera>
-  );
-};
-
-// G. Golden Gate emerges as the fog rolls away
-const BridgeShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const geo = memo("ing:gg", () => {
-    const north = ggTower(520, 700, 30, 1.25);
-    const south = ggTower(1560, 640, 260, 0.62);
-    const cable = (x0: number, y0: number, x1: number, y1: number, sag: number): Pt[] =>
-      Array.from({ length: 41 }, (_, i) => {
-        const t = i / 40;
-        return [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t + sag * 4 * t * (1 - t)] as Pt;
-      });
-    const main = cable(520, 60, 1560, 280, 420);
-    const back = cable(-200, 520, 520, 60, 60);
-    const deck = (x: number) => 700 - (x - 520) * 0.058;
-    const susp: string[] = [];
-    for (const [p] of [[main]])
-      for (const [x, y] of p.filter((_, i) => i % 1 === 0)) if (x > 540 && x < 1540) susp.push(`M${x.toFixed(1)} ${y.toFixed(1)}V${deck(x).toFixed(1)}`);
-    const headland: Pt[] = [[-400, 1300], [-400, 640], [-100, 600], [200, 660], [420, 760], [560, 900], [620, 1300]];
-    const city: Pt[] = [[1600, 700], ...Array.from({ length: 16 }, (_, i) => [1620 + i * 40, 640 - hash(i, 9) * 110] as Pt).flatMap(([x, y]) => [[x, y], [x + 32, y]] as Pt[]), [2300, 700]];
-    return {
-      towers: [...south, ...north],
-      cables: [L(smoothD(main), 4), L(smoothD(back), 4), L(susp.join(""), 1, { op: 0.8 }), L("M-200 710L2300 610", 5), L("M-200 732L2300 632", 2.4), HT(hatch([[[-200, 710], [2300, 610], [2300, 632], [-200, 732]]], { angle: 90, spacing: 8, seed: "deck" }), 1.4, 0.8)],
-      headland: [F(polyD(headland), "foliage", 0.8), HT(hatch([headland], { angle: 60, spacing: 3.6, seed: "hd" }), 1, 0.7), L(smoothD(headland.slice(1, -1)), 2.4)],
-      city: [F(polyD(city), "stone", 0.5), HT(hatch([city], { angle: 90, spacing: 5, seed: "cty" }), 1, 0.5), L(polyD(city, false), 1.4)],
-    };
-  });
-  const clear = easeInOut(clamp(f / 55));
-  return (
-    <Camera keys={[{ f: 0, z: 1.12, x: 40 }, { f: 60, z: 1.02, x: -40 }]} handheld={3} seed={57}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.25} />
-        <Sun x={1250} y={250} r={60} spin={0.2} />
-      </Layer>
-      <Layer depth={0.35}>
-        <InkDraw items={geo.city} start={-4} dur={10} />
-      </Layer>
-      <Layer depth={0.8}>
-        <InkSea top={640} rows={34} amp={10} speed={1} drift={0.6} seed="bay" />
-        <InkDraw items={geo.towers} start={-2} dur={20} overlap={0.4} />
-        <InkDraw items={geo.cables} start={4} dur={20} />
-        <Fog y={560} h={420} speed={3 + clear * 8} opacity={1 - clear * 0.85} count={14} seed="ggfog" x0={-700 + clear * 1600} />
-      </Layer>
-      <Layer depth={1.25}>
-        <InkDraw items={geo.headland} start={-4} dur={10} />
-        <Fog y={800} h={320} speed={5 + clear * 10} opacity={0.9 - clear * 0.7} count={10} seed="ggfog2" x0={-700 + clear * 2000} />
-        <Birds x0={-100} y0={300} x1={2000} y1={200} dur={60} count={5} seed="ggb" />
-      </Layer>
-    </Camera>
-  );
-};
-
-// H. The Empire State Building rises floor by floor, the camera tilting up
-const EmpireShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const uid = useUid("esb");
-  const esb = memo("ing:esb", empireItems);
-  const skyline = memo("ing:sky", () => {
-    const items = [];
-    const r = { i: 0 };
-    for (const [x, w, h] of [
-      [-200, 260, 520],
-      [100, 200, 760],
-      [320, 180, 440],
-      [1470, 220, 700],
-      [1720, 260, 520],
-      [2000, 200, 820],
-    ]) {
-      const poly = rectP(x, 1000 - h, w, h);
-      items.push(F(polyD(poly), "stone", 0.75), HT(hatch([poly], { angle: 90, spacing: 4.5, tone: (px) => 0.3 + (px - x) / w, threshold: 0.55, seed: `sk${r.i++}` }), 1, 0.7), L(polyD(poly), 2));
-      const wins: string[] = [];
-      for (let yy = 1000 - h + 20; yy < 990; yy += 30) wins.push(`M${x + 16} ${yy}H${x + w - 16}`);
-      items.push(L(wins.join(""), 3, { dash: "8 8", op: 0.7 }));
-    }
-    return items;
-  });
-  const t = easeInOut(clamp(f / 70));
-  const floors = 86 * easeOut(clamp(f / 62));
-  const revealY = ESB.ground - floors * ESB.floor - (f > 62 ? (f - 62) * 60 : 0);
-  const camY = Math.min(0, revealY - 250) * 0.95;
-  const frame: string[] = [];
-  if (floors < 86) {
-    for (let k = 0; k < 4; k++) frame.push(`M${ESB.cx - 280} ${revealY - k * ESB.floor}H${ESB.cx + 280}`);
-    for (let x = ESB.cx - 280; x <= ESB.cx + 280; x += 56) frame.push(`M${x} ${revealY}V${revealY - 3 * ESB.floor}`);
-  }
-  return (
-    <Camera keys={[{ f: 0, z: 1.05 }]} offset={{ y: camY - 60, x: Math.sin(t * 3) * 20 }} handheld={3} seed={58}>
-      <Layer depth={0.2}>
-        <Paper y={-3600} h={5200} />
-        <EngravedSky x={-600} y={-3400} w={3200} h={4200} dark={0.2} />
-        <Clouds speed={2} span={[-800, 2700]} clouds={[{ x: 100, y: -600, w: 600, h: 160, seed: "ec1" }, { x: 1300, y: -1400, w: 500, h: 140, seed: "ec2" }, { x: 600, y: -2300, w: 560, h: 150, seed: "ec3" }]} />
-      </Layer>
-      <Layer depth={0.7}>
-        <InkDraw items={skyline} start={-4} dur={12} />
-      </Layer>
-      <Layer depth={1}>
-        <defs>
-          <clipPath id={uid}>
-            <rect x={-400} y={revealY} width={2720} height={4000} />
-          </clipPath>
-        </defs>
-        <g clipPath={`url(#${uid})`}>
-          <InkDraw items={esb.items} start={-20} dur={4} hatchAt={0} washAt={0} washDur={2} />
-        </g>
-        <path d={frame.join("")} stroke={pal.ink} strokeWidth={3} fill="none" />
-        {floors < 86 && (
-          <g>
-            <path d={`M${ESB.cx + 120} ${revealY - 100}V${revealY}M${ESB.cx + 120} ${revealY - 100}L${ESB.cx - 180} ${revealY - 60}`} stroke={pal.ink} strokeWidth={5} />
-            <path d={`M${ESB.cx - 180} ${revealY - 60}V${revealY + 40 + Math.sin(f / 4) * 20}`} stroke={pal.ink} strokeWidth={1.5} />
-            <Sparks x={ESB.cx - 120} y={revealY} t0={Math.floor(f / 6) * 6} count={14} speed={10} life={12} seed={`es${Math.floor(f / 6)}`} />
-          </g>
-        )}
-      </Layer>
-      <Layer depth={1.2}>
-        <Birds x0={-100} y0={revealY - 200} x1={2000} y1={revealY - 300} dur={70} count={6} seed="eb" />
-      </Layer>
-    </Camera>
-  );
-};
-
 const SPIKE_HITS = [c(2.5) - c(2), c(3) - c(2)];
+
+const blueprint = (g: GL, f: number, a: number, b: number) => {
+  const u = g.post.uniforms;
+  const p = Math.min(1, Math.max(0, (f - a) / (b - a)));
+  u.uBlue.value = p < 1 ? 1 : 0;
+  u.uBlueSweep.value = p;
+};
+
+// A. The locomotive charges at the camera
+const locoSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.6, 0.35, 0.7).normalize();
+  sh.uSunCol.value.set(1.15, 0.95, 0.72);
+  sh.uSky.value.set(0.5, 0.52, 0.58);
+  sh.uGround.value.set(0.32, 0.28, 0.22);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#6f86a8", horizon: "#ecd6b0", bottom: "#a8987a", glow: 0.7, rays: 0.5, lines: 0.7, lineSpacing: 4, clouds: 0.35, cloudSpeed: 0.04, cloudCol: "#fbf1dc", cloudShade: "#948a80", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [120, 1500, 0.55], fogCol: "#e6d6b6" });
+  const prairie = makeGround(g, { size: 4000, res: 200, y: 0, amp: 30, freq: 0.002, color: "#a09060", flat: (x) => Math.min(1, Math.abs(x) / 80), mat: { mode: "stipple", hatch: 0.8 } });
+  g.scene.add(prairie.mesh);
+  const mesas = makeGround(g, { size: 6000, res: 120, y: -40, amp: 260, freq: 0.0012, color: "#b08a64", flat: (x, z) => (z < -1200 ? 1 : 0) });
+  g.scene.add(mesas.mesh);
+  const track = makeTrack(g, 900);
+  g.scene.add(track.group);
+  const poles = makePoles(g, 50, 18, 6);
+  g.scene.add(poles.group);
+  const loco = makeLoco(g);
+  g.scene.add(loco.group);
+  const smoke = new Smoke(g, 400, { color: "#7a746e", heatCol: "#ff9a3c", hatch: 1, inkDark: 0.15 });
+  g.scene.add(smoke.mesh);
+  const steam = new Puffs(sh, 200, { lit: "#ffffff", shade: "#c8c4bc", outline: 0.2, hatch: 0.3, lineSpacing: 4, soft: 0.4, rough: 0.35 });
+  g.scene.add(steam.mesh);
+  const lamp = new Glows(sh, 3, "#ffe7a8", 1.4);
+  g.scene.add(lamp.mesh);
+  g.enableShadows(2048, 30, 80);
+  return (f: number, t: number) => {
+    const speed = 26;
+    const z = -52 + t * speed;
+    loco.group.position.z = z;
+    loco.update(z);
+    if (g.shadow) g.shadow.center.set(0, 2, z);
+    // low camera beside the rails; the engine rushes toward and past
+    driveCamera(g, [{ f: 0, pos: [3.4, 1.0, 8], look: [0, 2.6, -30], fov: 48 }, { f: 60, pos: [4.2, 0.9, 7], look: [-0.5, 2.4, -2], fov: 56 }], f, 0.02, 51);
+    const sm: Puff[] = [];
+    // chimney smoke streams backward from the moving stack
+    for (let i = 0; i < 80; i++) {
+      const age = (i / 80) * 3;
+      const bz = z + 4.2 - age * speed * 0.7;
+      sm.push({ x: Math.sin(i * 1.7) * 0.4 * age + age * 1.5, y: 4.4 + age * 2.8 + Math.sin(i) * 0.3, z: bz, size: 0.7 + age * 1.6, alpha: Math.max(0, 1 - age / 3), seed: i * 0.37 });
+    }
+    smoke.set(sm);
+    const st: Puff[] = [];
+    emit({ at: [1.1, 1.3, z + 3.6], rate: 30, life: 1, vel: [4, 0.5, -3], spread: 1, size: [0.3, 1.6], drag: 1.2, alpha: 0.8, seed: 5, prewarm: 1 }, t, st);
+    emit({ at: [-1.1, 1.3, z + 3.6], rate: 30, life: 1, vel: [-4, 0.5, -3], spread: 1, size: [0.3, 1.6], drag: 1.2, alpha: 0.8, seed: 6, prewarm: 1 }, t, st);
+    steam.set(st, g.camera);
+    const hl = loco.group.localToWorld(loco.headlamp.clone());
+    lamp.set([{ x: hl.x, y: hl.y, z: hl.z + 0.2, size: 1.2, alpha: 0.9 }, { x: hl.x, y: hl.y, z: hl.z + 0.3, size: 4, alpha: 0.25 }], g.camera);
+  };
+};
+
+// B. The golden spike hammered home on the beats, sparks flying
+const spikeSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.5, 0.6, 0.5).normalize();
+  sh.uSunCol.value.set(1.2, 1.0, 0.8);
+  sh.uSky.value.set(0.45, 0.45, 0.5);
+  sh.uGround.value.set(0.3, 0.26, 0.2);
+  g.camera.near = 0.02;
+  g.camera.far = 200;
+  const sky = makeSky(sh, { top: "#8a9ab0", horizon: "#eadcc0", bottom: "#a8987a", glow: 0.5, lines: 0.6, lineSpacing: 4, paper: 0.3 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [6, 60, 0.6], fogCol: "#e2d4b8" });
+  const S = spikeGeo();
+  const iron = g.ink({ color: "#6a6660", mode: "screen", angle: 20, scale: 3.5, spec: 0.8, gloss: 30 });
+  const gold = g.ink({ color: "#e0b040", mode: "screen", angle: 60, scale: 3.5, spec: 2, gloss: 60, rim: 1, rimCol: "#fff0b0" });
+  const tieM = g.ink({ color: "#6a5238", mode: "screen", angle: 5, scale: 3.5, cross: 0.6, frag: "extraInk += step(0.7, tvn(vec2(vWorld.x * 2.0, vWorld.z * 30.0))) * 0.4;" });
+  g.scene.add(new THREE.Mesh(S.tie, tieM));
+  const railL = new THREE.Mesh(S.rail, iron);
+  railL.position.x = -0.72;
+  const railR = new THREE.Mesh(S.rail, iron);
+  railR.position.x = 0.72;
+  g.scene.add(railL, railR, new THREE.Mesh(S.plate, iron));
+  const spike = new THREE.Mesh(S.spike, gold);
+  spike.position.set(0.95, 0, 0);
+  g.scene.add(spike);
+  const ground = makeGround(g, { size: 300, res: 60, y: -0.2, amp: 0.3, freq: 0.1, color: "#9a8a6a", mat: { mode: "stipple", hatch: 0.8 } });
+  g.scene.add(ground.mesh);
+  // the man swinging the maul
+  const man = makeFigure(g, "frock", { color: { coat: "#3a3028", hat: "#1e1a16" } });
+  man.root.position.set(1.05, -0.2, -0.75);
+  man.root.rotation.y = -0.25;
+  g.scene.add(man.root);
+  const maul = new THREE.Mesh(S.maul, iron);
+  man.j.rHand.add(maul);
+  maul.position.set(0, -0.08, 0);
+  // crowd of onlookers behind, a second locomotive's pilot in the back
+  const r = rng("spikecrowd");
+  for (let i = 0; i < 8; i++) {
+    const f2 = makeFigure(g, i % 3 ? "frock" : "worker", { color: { coat: ["#2e2a26", "#3a3a44", "#4a3c30"][i % 3] } });
+    f2.root.position.set(-2 + r() * 5, -0.2, -3.5 - r() * 3);
+    f2.root.rotation.y = r() * 0.8 - 0.4;
+    f2.pose({ lSh: [0.1, 0.15, 0], rSh: [i % 2 ? 2.6 : 0.1, 0.2, 0], rEl: 0.2 });
+    g.scene.add(f2.root);
+  }
+  const sparks = new Glows(sh, 300, "#ffd070", 1.4);
+  g.scene.add(sparks.mesh);
+  const flash = new Glows(sh, 4, "#fff0c0", 1);
+  g.scene.add(flash.mesh);
+  return (f: number, t: number) => {
+    // swing cycle keyed to the hits
+    let sink = 0;
+    let swing = 0;
+    let lastHit = -1;
+    SPIKE_HITS.forEach((h, i) => {
+      if (f >= h) {
+        sink = (i + 1) * 0.05;
+        lastHit = h;
+      }
+      const d = (f - (h - 12)) / 12;
+      if (d >= 0 && d <= 1) swing = d;
+    });
+    const up = swing > 0 ? Math.sin(swing * Math.PI * 0.5) : 0;
+    const raise = swing > 0 ? 1 - up : 0.7 + Math.sin(t * 3) * 0.05;
+    man.pose({ bend: 0.3 + (1 - raise) * 0.3, rSh: [0.4 + raise * 2.6, 0.2, 0], lSh: [0.4 + raise * 2.4, 0.25, 0], rEl: 0.2, lEl: 0.3, lHip: [0.2, 0.15], rHip: [-0.1, 0.1], lKn: 0.25, rKn: 0.15 });
+    maul.rotation.x = -0.6 + raise * 0.4;
+    spike.position.y = 0.12 - sink;
+    const a = lastHit >= 0 ? (f - lastHit) / 30 : -1;
+    const sp: Puff[] = [];
+    if (a >= 0 && a < 0.6)
+      for (let i = 0; i < 120; i++) {
+        const age = a - hash(i, lastHit) * 0.04;
+        if (age < 0) continue;
+        const ang = hash(i, lastHit, 2) * Math.PI * 2;
+        const v = 1.5 + hash(i, lastHit, 3) * 3;
+        sp.push({ x: 0.95 + Math.cos(ang) * v * age, y: 0.3 + (1.5 + hash(i, lastHit, 4) * 3) * age - 4.9 * age * age, z: Math.sin(ang) * v * age, size: 0.012, alpha: 1 - age / 0.6, stretch: 5 });
+      }
+    sparks.set(sp, g.camera);
+    flash.set(a >= 0 && a < 0.12 ? [{ x: 0.95, y: 0.35, z: 0, size: 0.8 * (1 - a / 0.12), alpha: 1 }] : [], g.camera);
+    driveCamera(g, [{ f: 0, pos: [-0.4, 0.5, 2.8], look: [0.9, 0.8, -0.4], fov: 42 }, { f: 45, pos: [-0.1, 0.45, 2.4], look: [0.95, 0.7, -0.4], fov: 40 }], f, 0.004, 52);
+  };
+};
+
+// C. Edison's lamp: blueprint -> engraving, filament brightens to a flare
+const bulbSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.5, 0.6, 0.6).normalize();
+  sh.uSunCol.value.set(0.6, 0.55, 0.5);
+  sh.uSky.value.set(0.15, 0.14, 0.14);
+  sh.uGround.value.set(0.08, 0.07, 0.06);
+  g.camera.near = 0.005;
+  g.camera.far = 20;
+  const sky = makeSky(sh, { top: "#1a1612", horizon: "#241d16", bottom: "#1a1612", glow: 0, lines: 0.5, lineSpacing: 4, paper: 0 });
+  g.scene.add(sky.mesh);
+  const B = bulbGeo();
+  const glassM = glassMaterial(g.shared, "#d8ecff", 1.2);
+  const brassM = g.ink({ color: "#b9913e", mode: "screen", angle: 30, scale: 3.5, spec: 1.4, gloss: 40 });
+  const filM = g.ink({ color: "#2a2016", hatch: 0.2, uniforms: { uGlow: { value: 0 } }, fragDecl: "uniform float uGlow;", frag: "emis += vec3(1.6, 1.1, 0.5) * uGlow * 2.0; albedo = mix(albedo, vec3(1.0, 0.8, 0.4), uGlow);" });
+  const bulb = new THREE.Group();
+  bulb.add(new THREE.Mesh(B.glass, glassM), new THREE.Mesh(B.base, brassM), new THREE.Mesh(B.stem, glassM), new THREE.Mesh(B.filament, filM));
+  g.scene.add(bulb);
+  const bench = new THREE.Mesh(box(1, 0.02, 0.6, 0, -0.01, 0), g.ink({ color: "#5a4030", mode: "screen", angle: 8, scale: 3.5 }));
+  g.scene.add(bench);
+  const halo = new Glows(sh, 6, "#ffcf7a", 1.2);
+  g.scene.add(halo.mesh);
+  return (f: number, t: number) => {
+    blueprint(g, f, 4, 22);
+    const glow = Math.min(1, Math.max(0, (f - 20) / 20)) * (0.9 + 0.1 * Math.sin(t * 40));
+    const flare = Math.max(0, (f - 38) / 7);
+    (glassM.uniforms.uGlow as THREE.IUniform).value = glow;
+    (filM.uniforms.uGlow as THREE.IUniform).value = glow;
+    sh.uPL0.value.set(0, 0.12, 0, 0.8);
+    sh.uPLc0.value.setRGB(glow * 2, glow * 1.5, glow * 0.8);
+    halo.set(glow > 0 ? [{ x: 0, y: 0.12, z: 0, size: 0.05 + glow * 0.06 + flare * 0.3, alpha: 0.6 + flare }, { x: 0, y: 0.12, z: 0, size: 0.25 + flare * 1.5, alpha: 0.25 * glow + flare * 0.8 }] : [], g.camera);
+    bulb.rotation.y = t * 0.3;
+    driveCamera(g, [{ f: 0, pos: [0.2, 0.14, 0.42], look: [0, 0.09, 0], fov: 36 }, { f: 45, pos: [0.13, 0.12, 0.33], look: [0, 0.095, 0], fov: 36 }], f, 0.0006, 53);
+  };
+};
+
+// D. The Wright Flyer lifts off the dunes and banks past the camera
+const flyerSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.4, 0.55, 0.6).normalize();
+  sh.uSunCol.value.set(1.2, 1.1, 0.95);
+  sh.uSky.value.set(0.5, 0.55, 0.65);
+  sh.uGround.value.set(0.35, 0.32, 0.26);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#6e8fbd", horizon: "#e6e2d4", bottom: "#b0a488", glow: 0.5, lines: 0.7, lineSpacing: 4, clouds: 0.4, cloudSpeed: 0.08, cloudCol: "#ffffff", cloudShade: "#9ca4ae", paper: 0.25 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [120, 1500, 0.5], fogCol: "#e8e2d2" });
+  const dunes = new THREE.Mesh(terrain(1200, 1200, 220, 220, (x, z) => (fbm2(x * 0.01, z * 0.004, 4, 3) - 0.5) * 18 + Math.max(0, -z - 40) * 0.08 + Math.sin(x * 0.05 + z * 0.01) * 1.5), g.ink({ color: "#d8c49a", mode: "stipple", hatch: 0.9 }));
+  g.scene.add(dunes);
+  const sea = makeWater(g, { w: 3000, d: 1200, res: 120, y: -6, color: "#6a7c88", sky: "#d8dde2", amp: 0.3, freq: 0.1, lineSpacing: 4 });
+  sea.mesh.position.set(0, -6, -900);
+  g.scene.add(sea.mesh);
+  const grass = makeReeds(g, { count: 3000, x: [-60, 60], z: [-40, 30], y: (x, z) => (fbm2(x * 0.01, z * 0.004, 4, 3) - 0.5) * 18 + Math.max(0, -z - 40) * 0.08 + Math.sin(x * 0.05 + z * 0.01) * 1.5, h: [0.3, 0.9], w: 0.02, color: "#8a8a50", seed: "dune", sway: 0.4, wind: 2.5, edges: 0 });
+  g.scene.add(grass.mesh);
+  const F = flyerGeo();
+  const cloth = g.ink({ color: "#efe6d2", mode: "screen", angle: 5, scale: 3.5, side: THREE.DoubleSide, rim: 0.5, frag: "extraInk += step(0.92, fract(vObj.x * 1.6)) * 0.5;" });
+  const woodM = g.ink({ color: "#8a7050", mode: "screen", angle: 70, scale: 3.5 });
+  const flyer = new THREE.Group();
+  flyer.add(new THREE.Mesh(F.wings, cloth), new THREE.Mesh(F.canard, cloth), new THREE.Mesh(F.rudder, cloth), new THREE.Mesh(F.struts, woodM));
+  const props = [1, -1].map((s) => {
+    const p = new THREE.Mesh(propGeo(), woodM);
+    p.position.set(s * 1.8, 1.8, -1.1);
+    flyer.add(p);
+    return p;
+  });
+  const pilot = makeFigure(g, "frock", { scale: 0.95, color: { coat: "#2a2622", hat: "#2a2622" } });
+  pilot.root.position.set(-0.3, 0.95, 0);
+  pilot.root.rotation.x = -Math.PI / 2;
+  pilot.pose({ lSh: [2.8, 0.1, 0], rSh: [2.8, 0.1, 0] });
+  flyer.add(pilot.root);
+  g.scene.add(flyer);
+  // Wilbur running alongside
+  const runner = makeFigure(g, "frock", { color: { coat: "#2e2a26" } });
+  g.scene.add(runner.root);
+  const sand = new Puffs(sh, 120, { lit: "#f0e2c0", shade: "#b8a47c", outline: 0.2, hatch: 0.3, lineSpacing: 4, soft: 0.4, rough: 0.4 });
+  g.scene.add(sand.mesh);
+  return (f: number, t: number) => {
+    blueprint(g, f, 2, 18);
+    const T = t;
+    const z = -30 + T * 12;
+    const lift = Math.max(0, T - 0.6);
+    const y = 0.3 + lift * lift * 3.2;
+    const bank = Math.min(0.5, lift * 0.35);
+    flyer.position.set(-lift * lift * 2.5, y, z);
+    flyer.rotation.set(-0.05 - Math.min(0.12, lift * 0.1), -lift * 0.25, bank);
+    props.forEach((p, i) => (p.rotation.z = t * 40 * (i ? 1 : -1)));
+    runner.root.position.set(4, 0, z - 1 - Math.max(0, T - 0.8) * 3);
+    const ph = t * 9;
+    runner.pose({ bend: 0.25, lHip: [Math.sin(ph) * 0.7, 0.05], rHip: [-Math.sin(ph) * 0.7, 0.05], lKn: Math.max(0, -Math.sin(ph)) * 1.2, rKn: Math.max(0, Math.sin(ph)) * 1.2, lSh: [-Math.sin(ph) * 0.6, 0.15, 0], rSh: [Math.sin(ph) * 0.6 + 0.4, 0.15, 0], lEl: 1.2, rEl: 1.2 });
+    const sd: Puff[] = [];
+    emit({ at: [0, 0.2, z - 2], rate: 40, life: 1.2, vel: [0, 0.8, -5], spread: 1.5, size: [0.3, 1.5], drag: 1.5, alpha: 0.7 * Math.max(0, 1 - lift), seed: 7 }, t, sd);
+    sand.set(sd, g.camera);
+    const fp = flyer.position;
+    driveCamera(g, [{ f: 0, pos: [fp.x + 9, fp.y + 1.2, fp.z + 9], look: [fp.x, fp.y + 1.2, fp.z], fov: 46 }, { f: 60, pos: [fp.x + 7, fp.y + 0.2, fp.z + 8], look: [fp.x, fp.y + 1.6, fp.z], fov: 48 }], f, 0.01, 54);
+  };
+};
+
+// E. A Model T rolls down the assembly line; welding sparks, hoists
+const modelTSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.3, 0.8, 0.4).normalize();
+  sh.uSunCol.value.set(1.0, 0.95, 0.85);
+  sh.uSky.value.set(0.35, 0.34, 0.33);
+  sh.uGround.value.set(0.2, 0.18, 0.16);
+  g.camera.far = 400;
+  const sky = makeSky(sh, { top: "#2a2622", horizon: "#3a342c", bottom: "#2a2622", glow: 0, lines: 0.5, lineSpacing: 4, paper: 0 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [15, 90, 0.6], fogCol: "#b8ab94" });
+  // factory: floor, sawtooth roof trusses, columns, skylight beams
+  const steel = g.ink({ color: "#5a5a5c", mode: "screen", angle: 70, scale: 3.5, instanced: true });
+  const floor = new THREE.Mesh(box(60, 0.2, 200, 0, -0.1, -60), g.ink({ color: "#7a7266", mode: "stipple", hatch: 0.8 }));
+  g.scene.add(floor);
+  const colG = merge([box(0.4, 9, 0.4, 0, 4.5, 0), box(0.8, 0.3, 0.8, 0, 0.15, 0)]);
+  const cols = new THREE.InstancedMesh(colG, steel, 40);
+  for (let i = 0; i < 20; i++) {
+    cols.setMatrixAt(i * 2, new THREE.Matrix4().makeTranslation(-8, 0, 10 - i * 8));
+    cols.setMatrixAt(i * 2 + 1, new THREE.Matrix4().makeTranslation(8, 0, 10 - i * 8));
+  }
+  cols.frustumCulled = false;
+  g.scene.add(cols);
+  const truss = merge([box(17, 0.4, 0.3, 0, 9, 0), tube([new THREE.Vector3(-8, 9, 0), new THREE.Vector3(0, 12, 0), new THREE.Vector3(8, 9, 0)], 0.15, 8, 5)]);
+  const trusses = new THREE.InstancedMesh(truss, steel, 20);
+  for (let i = 0; i < 20; i++) trusses.setMatrixAt(i, new THREE.Matrix4().makeTranslation(0, 0, 10 - i * 8));
+  trusses.frustumCulled = false;
+  g.scene.add(trusses);
+  // conveyor line
+  const lineM = g.ink({ color: "#4a4238", mode: "screen", angle: 0, scale: 3.5, frag: "extraInk += step(0.9, fract(vWorld.z * 2.0 - uTime * 1.2)) * 0.5;" });
+  g.scene.add(new THREE.Mesh(box(2.4, 0.5, 200, 0, 0.25, -60), lineM));
+  // cars in stages of assembly
+  const T = modelTGeo();
+  const black = g.ink({ color: "#1c1c1e", mode: "screen", angle: 30, scale: 3.5, spec: 1.2, gloss: 40, rim: 0.7 });
+  const brassM = g.ink({ color: "#c8973c", mode: "screen", angle: 40, scale: 3.5, spec: 1.5, gloss: 50 });
+  const wheelM = g.ink({ color: "#3a2e22", mode: "screen", angle: 60, scale: 3.5 });
+  const cars: THREE.Group[] = [];
+  for (let i = 0; i < 7; i++) {
+    const car = new THREE.Group();
+    car.add(new THREE.Mesh(T.body, black), new THREE.Mesh(T.brass, brassM));
+    for (const [x, z] of [
+      [0.75, 1.3],
+      [-0.75, 1.3],
+      [0.75, -0.9],
+      [-0.75, -0.9],
+    ]) {
+      const w = new THREE.Mesh(T.wheel, wheelM);
+      w.position.set(x, 0.45, z);
+      w.scale.setScalar(0.9);
+      car.add(w);
+    }
+    car.position.set(0, 0.5, -i * 7);
+    g.scene.add(car);
+    cars.push(car);
+  }
+  // workers
+  const workers: { fig: ReturnType<typeof makeFigure>; ph: number }[] = [];
+  for (let i = 0; i < 8; i++) {
+    const fig = makeFigure(g, "worker", { color: { coat: "#3e4a5a", pants: "#2e3440" } });
+    const s = i % 2 ? 1 : -1;
+    fig.root.position.set(s * 2.2, 0, -2 - Math.floor(i / 2) * 7);
+    fig.root.rotation.y = s > 0 ? -Math.PI / 2 : Math.PI / 2;
+    g.scene.add(fig.root);
+    workers.push({ fig, ph: i * 0.9 });
+  }
+  const sparks = new Glows(sh, 300, "#ffd080", 1.4);
+  g.scene.add(sparks.mesh);
+  const beams = new Glows(sh, 10, "#fff2d8", 0.1);
+  g.scene.add(beams.mesh);
+  const haze = new Puffs(sh, 80, { lit: "#e8e0d0", shade: "#a8a090", outline: 0.1, hatch: 0.2, lineSpacing: 4, soft: 0.6, rough: 0.3 });
+  g.scene.add(haze.mesh);
+  return (f: number, t: number) => {
+    blueprint(g, f, 2, 16);
+    cars.forEach((car, i) => (car.position.z = -i * 7 + t * 1.6));
+    workers.forEach(({ fig, ph }) => {
+      const s = Math.sin(t * 5 + ph);
+      fig.pose({ bend: 0.45 + s * 0.08, lSh: [1.2 + s * 0.2, 0.2, 0], rSh: [1.4 - s * 0.3, 0.25, 0], lEl: 1.0, rEl: 0.8 + s * 0.3, lHip: [0.35, 0.12], rHip: [0.2, 0.12], lKn: 0.4, rKn: 0.3, crouch: 0.1 });
+    });
+    const sp: Puff[] = [];
+    for (let k = 0; k < 3; k++) {
+      const ox = k % 2 ? 1.3 : -1.3;
+      const oz = -2 - k * 7 + 0.6;
+      for (let i = 0; i < 50; i++) {
+        const born = (Math.floor(t * 12) - (i % 12)) / 12;
+        const age = t - born - hash(i, k) * 0.05;
+        if (age < 0 || age > 0.5) continue;
+        const a = hash(i, k, Math.floor(born * 12)) * Math.PI * 2;
+        const v = 1 + hash(i, k, 3) * 2.5;
+        sp.push({ x: ox + Math.cos(a) * v * age, y: 1.1 + v * 0.6 * age - 4.9 * age * age, z: oz + Math.sin(a) * v * age, size: 0.02, alpha: 1 - age / 0.5, stretch: 3 });
+      }
+    }
+    sparks.set(sp, g.camera);
+    const hz: Puff[] = [];
+    for (let i = 0; i < 60; i++) hz.push({ x: (hash(i, 1) - 0.5) * 14, y: 4 + hash(i, 2) * 5, z: 10 - hash(i, 3) * 80 + ((t * 0.5) % 4), size: 2 + hash(i, 4) * 3, alpha: 0.15, seed: i });
+    haze.set(hz, g.camera);
+    driveCamera(g, [{ f: 0, pos: [3.4, 2.4, 6], look: [0, 1.2, -6], fov: 46 }, { f: 45, pos: [2.8, 2.0, 4.6], look: [0, 1.1, -4], fov: 46 }], f, 0.006, 55);
+  };
+};
+
+// F. Water thundering through Hoover Dam; spray and mist
+const damSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.5, 0.55, 0.65).normalize();
+  sh.uSunCol.value.set(1.2, 1.05, 0.85);
+  sh.uSky.value.set(0.5, 0.55, 0.65);
+  sh.uGround.value.set(0.35, 0.3, 0.25);
+  g.camera.far = 5000;
+  const sky = makeSky(sh, { top: "#5d82b8", horizon: "#e6dcc6", bottom: "#a88a6a", glow: 0.6, lines: 0.7, lineSpacing: 4, clouds: 0.25, cloudSpeed: 0.04, cloudCol: "#fffaf0", cloudShade: "#a0a0a8", paper: 0.2 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [400, 3500, 0.5], fogCol: "#e6dcc8" });
+  const D = damGeo();
+  const conc = g.ink({ color: "#d9d2c2", mode: "screen", angle: 80, scale: 3.5, cross: 0.6, side: THREE.DoubleSide, shade: 1, frag: "float hj = 1.0 - smoothstep(0.0, 0.06, abs(fract(vWorld.y / 5.0) - 0.5) * 2.0 - 0.9); float vj = 1.0 - smoothstep(0.0, 0.05, abs(fract(atan(vWorld.x, vWorld.z + 180.0) * 60.0) - 0.5) * 2.0 - 0.92); extraInk += max(hj, vj) * 0.45 + 0.12; albedo *= 0.82 + tvn(vWorld.xy * vec2(0.08, 0.02)) * 0.3; albedo *= 1.0 - smoothstep(0.55, 0.9, tvn(vec2(vWorld.x * 0.1, vWorld.y * 0.01))) * 0.25;" });
+  const dam = new THREE.Group();
+  dam.add(new THREE.Mesh(D.face, conc), new THREE.Mesh(D.extra, conc));
+  g.scene.add(dam);
+  // Black Canyon walls
+  const rock = g.ink({ color: "#9a6a4a", mode: "screen", angle: 70, scale: 3.5, cross: 0.7, shade: 1 });
+  for (const s of [-1, 1]) {
+    const wall = new THREE.Mesh(
+      terrain(700, 1600, 160, 300, (x, z) => ridged2(x * 0.01, z * 0.006, 5, s > 0 ? 3 : 4) * 90 + (fbm2(x * 0.03, z * 0.03, 3, 5) - 0.5) * 20 + Math.max(0, x * s * -1 + 0) * 0),
+      rock,
+    );
+    wall.rotation.z = (s * Math.PI) / 2;
+    wall.position.set(s * 250, 120, 300);
+    g.scene.add(wall);
+  }
+  const river = makeWater(g, { w: 400, d: 2000, res: 160, y: 2, color: "#3a6a70", sky: "#c8d8dc", amp: 0.8, freq: 0.08, speed: 2, lineSpacing: 4 });
+  river.mesh.position.set(0, 2, 900);
+  g.scene.add(river.mesh);
+  // spillway jets: water arcs from the outlet works + roaring mist
+  const water = new Puffs(sh, 700, { lit: "#ffffff", shade: "#b8c8cc", outline: 0.15, hatch: 0.25, lineSpacing: 4, soft: 0.55, rough: 0.45 });
+  g.scene.add(water.mesh);
+  const mist = new Puffs(sh, 200, { lit: "#ffffff", shade: "#c8d0d0", outline: 0.1, hatch: 0.25, lineSpacing: 4, soft: 0.7, rough: 0.35 });
+  g.scene.add(mist.mesh);
+  return (f: number, t: number) => {
+    const wl: Puff[] = [];
+    for (const s of [-1, 1])
+      for (let j = 0; j < 4; j++) {
+        const ox = s * (150 + j * 14);
+        for (let i = 0; i < 80; i++) {
+          const u = ((i / 80 + t * 0.9) % 1) * 1.6;
+          wl.push({ x: ox - s * u * 30, y: 50 + j * 4 + u * 30 - 42 * u * u, z: 250 + u * 60, size: 5 + u * 9, alpha: 0.95 - u * 0.4, seed: i * 0.3 + j });
+        }
+      }
+    water.set(wl, g.camera);
+    const ms: Puff[] = [];
+    emit({ at: [0, 4, 320], rate: 24, life: 4, vel: [0, 5, 10], spread: 5, size: [5, 18], drag: 0.6, alpha: 0.8, seed: 3, prewarm: 4, jitter: [120, 3, 20] }, t, ms);
+    mist.set(ms, g.camera);
+    driveCamera(g, [{ f: 0, pos: [-80, 50, 720], look: [0, 100, 100], fov: 50 }, { f: 60, pos: [-40, 70, 640], look: [0, 110, 100], fov: 50 }], f, 0.01, 56);
+    drawIn([conc], f, -10, 20, 0.3);
+  };
+};
+
+// G. The Golden Gate emerges as the fog rolls away
+const bridgeSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.6, 0.35, 0.7).normalize();
+  sh.uSunCol.value.set(1.25, 1.0, 0.8);
+  sh.uSky.value.set(0.5, 0.52, 0.6);
+  sh.uGround.value.set(0.3, 0.28, 0.25);
+  g.camera.far = 8000;
+  const sky = makeSky(sh, { top: "#6d8cb8", horizon: "#f2dcc0", bottom: "#8a8a90", glow: 0.8, rays: 0.6, lines: 0.7, lineSpacing: 4, clouds: 0.2, cloudSpeed: 0.05, cloudCol: "#fff6ea", cloudShade: "#a0a0a8", paper: 0.2 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [600, 6000, 0.45], fogCol: "#ece2d2" });
+  const T = ggTowerGeo();
+  const orange = g.ink({ color: "#c0472c", mode: "screen", angle: 80, scale: 3.5, cross: 0.6, rim: 0.4 });
+  const towers = [-640, 640].map((x) => {
+    const m = new THREE.Mesh(T.tower, orange);
+    m.position.set(x, 0, 0);
+    g.scene.add(m);
+    return m;
+  });
+  // main cables (catenary) + suspenders + deck
+  const cable = (sz: number) => {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 80; i++) {
+      const x = -1400 + (i / 80) * 2800;
+      const inSpan = Math.abs(x) <= 640;
+      const y = inSpan ? 70 + ((x / 640) ** 2) * (T.H - 70) : T.H - ((Math.abs(x) - 640) / 760) * (T.H - 20);
+      pts.push(new THREE.Vector3(x, y, sz));
+    }
+    return tube(pts, 1.2, 200, 8);
+  };
+  const deckG = merge([box(2800, 8, 27, 0, 66, 0), cable(-14), cable(14)]);
+  const susp: THREE.BufferGeometry[] = [];
+  for (let x = -620; x <= 620; x += 16) {
+    const y = 70 + ((x / 640) ** 2) * (T.H - 70);
+    for (const sz of [-14, 14]) susp.push(cyl(0.25, 0.25, y - 70, 4, x, (y + 70) / 2, sz));
+  }
+  g.scene.add(new THREE.Mesh(deckG, orange), new THREE.Mesh(merge(susp), orange));
+  // headlands
+  const land = g.ink({ color: "#7a7a58", mode: "stipple", hatch: 0.8 });
+  for (const s of [-1, 1]) {
+    const hl = new THREE.Mesh(terrain(1600, 1600, 120, 120, (x, z) => Math.max(0, 1 - Math.hypot(x, z) / 700) * 260 * (0.6 + fbm2(x * 0.004, z * 0.004, 4, s > 0 ? 3 : 4) * 0.8) - 20), land);
+    hl.position.set(s * 1500, 0, 100);
+    g.scene.add(hl);
+  }
+  const bay = makeWater(g, { w: 8000, d: 8000, res: 200, y: 0, color: "#4a6a7a", sky: "#d8dde4", amp: 0.6, freq: 0.05, lineSpacing: 4 });
+  g.scene.add(bay.mesh);
+  const fog = new Puffs(sh, 300, { lit: "#fdfaf4", shade: "#d8d2c8", outline: 0.12, hatch: 0.3, lineSpacing: 4, soft: 0.7, rough: 0.3 });
+  g.scene.add(fog.mesh);
+  return (f: number, t: number) => {
+    const fl: Puff[] = [];
+    for (let i = 0; i < 260; i++) {
+      const x = -1500 + hash(i, 1) * 3000 - t * 120;
+      const z = -300 + hash(i, 2) * 600 - t * 20;
+      const thin = Math.min(1, t / 1.8);
+      const y = 10 + hash(i, 3) * 150;
+      fl.push({ x, y, z, size: (70 + hash(i, 4) * 80) * (1 - thin * 0.5), alpha: 0.9 * (1 - thin * 0.9), seed: hash(i, 5) * 9 });
+    }
+    fog.set(fl, g.camera);
+    driveCamera(g, [{ f: 0, pos: [-1300, 60, 900], look: [0, 130, 0], fov: 38 }, { f: 60, pos: [-1150, 90, 820], look: [0, 140, 0], fov: 38 }], f, 0.006, 57);
+    towers.forEach((m) => void m);
+  };
+};
+
+// H. The Empire State Building rises floor by floor as the camera tilts up
+const esbSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(-0.5, 0.45, 0.75).normalize();
+  sh.uSunCol.value.set(1.2, 1.05, 0.85);
+  sh.uSky.value.set(0.5, 0.52, 0.6);
+  sh.uGround.value.set(0.3, 0.28, 0.25);
+  g.camera.far = 5000;
+  const sky = makeSky(sh, { top: "#5f7fae", horizon: "#e8dcc4", bottom: "#8a8478", glow: 0.7, rays: 0.5, lines: 0.7, lineSpacing: 4, clouds: 0.3, cloudSpeed: 0.08, cloudCol: "#fff8ee", cloudShade: "#9c9ca4", paper: 0.2 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [400, 3000, 0.5], fogCol: "#e2dccc" });
+  const stoneM = g.ink({
+    color: "#d8d2c4",
+    mode: "screen",
+    angle: 80,
+    scale: 3.5,
+    cross: 0.6,
+    rim: 0.3,
+    uniforms: { uTop: { value: 0 } },
+    fragDecl: "uniform float uTop;",
+    frag: /* glsl */ `
+      if (vWorld.y > uTop) discard;
+      // vertical piers + window rows + spandrels
+      float wall = 1.0 - step(0.7, abs(N.y));
+      vec2 wp = vec2(abs(N.x) > 0.5 ? vWorld.z : vWorld.x, vWorld.y);
+      float pier = step(0.78, fract(wp.x / 3.0));
+      float win = (1.0 - pier) * step(0.3, fract(wp.y / 3.9)) * step(fract(wp.y / 3.9), 0.85);
+      albedo = mix(albedo, vec3(0.25, 0.27, 0.3), win * wall * 0.8);
+      extraInk += pier * wall * 0.15;
+      // the fresh top floor glows with welding
+      float edge = smoothstep(uTop - 4.0, uTop, vWorld.y);
+      emis += vec3(1.0, 0.7, 0.3) * edge * 0.3;
+    `,
+  });
+  const L = esbLevels();
+  const geos: THREE.BufferGeometry[] = [];
+  for (const [y0, y1, w, d] of L) geos.push(box(w, y1 - y0, d, 0, (y0 + y1) / 2, 0));
+  // mooring mast + antenna
+  geos.push(cyl(8, 10, 40, 16, 0, 400, 0), cyl(5, 7, 20, 12, 0, 430, 0), cyl(0.8, 2, 60, 8, 0, 470, 0));
+  const esb = new THREE.Mesh(merge(geos), stoneM);
+  g.scene.add(esb);
+  // steel skeleton above the stone, derrick at the top
+  const steelM = g.ink({ color: "#3a3a3c", mode: "screen", angle: 20, scale: 3.5, instanced: true });
+  const beam = new THREE.BoxGeometry(0.6, 1, 0.6);
+  const frame = new THREE.InstancedMesh(beam, steelM, 400);
+  frame.frustumCulled = false;
+  g.scene.add(frame);
+  const derrick = new THREE.Group();
+  const dm = g.ink({ color: "#2a2a2c", hatch: 0.3 });
+  derrick.add(new THREE.Mesh(cyl(0.4, 0.4, 30, 6, 0, 15, 0), dm), new THREE.Mesh(tube([new THREE.Vector3(0, 28, 0), new THREE.Vector3(18, 12, 0)], 0.3, 2, 5), dm));
+  g.scene.add(derrick);
+  // surrounding city blocks
+  const cityM = g.ink({
+    color: "#aaa396",
+    mode: "screen",
+    angle: 70,
+    scale: 3.5,
+    instanced: true,
+    frag: /* glsl */ `
+      float wall = 1.0 - step(0.7, abs(N.y));
+      vec2 wp = vec2(abs(N.x) > 0.5 ? vWorld.z : vWorld.x, vWorld.y);
+      vec2 f2 = fract(wp / vec2(3.4, 3.8));
+      float win = step(0.25, f2.x) * step(f2.x, 0.75) * step(0.3, f2.y) * step(f2.y, 0.8);
+      albedo = mix(albedo, vec3(0.28, 0.3, 0.33), win * wall * 0.85);
+      extraInk += step(0.97, fract(vWorld.y / 3.8)) * wall * 0.3;
+      // cornices on the roofline
+      albedo *= 1.0 - step(0.7, N.y) * 0.1;
+    `,
+  });
+  const r = rng("esbcity");
+  const blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), cityM, 400);
+  for (let i = 0; i < 400; i++) {
+    const x = (r() - 0.5) * 900;
+    const z = (r() - 0.5) * 900;
+    if (Math.hypot(x, z) < 90 || Math.hypot(x + 140, z - 260) < 120) continue;
+    const h = 25 + Math.pow(r(), 2.2) * 150;
+    blocks.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(x, h / 2, z), new THREE.Quaternion(), new THREE.Vector3(30 + r() * 30, h, 30 + r() * 30)));
+  }
+  blocks.frustumCulled = false;
+  g.scene.add(blocks);
+  const birds = new Glows(sh, 1, "#000", 0);
+  void birds;
+  const m4 = new THREE.Matrix4();
+  return (f: number) => {
+    const k = Math.min(1, f / 70);
+    const e = 1 - Math.pow(1 - k, 2);
+    const top = 30 + e * 460;
+    (stoneM.uniforms.uTop as THREE.IUniform).value = top - 12;
+    // skeleton: columns and girders for the next 12 m above the stone
+    let n = 0;
+    const lvl = L.find(([y0, y1]) => top >= y0 && top <= y1) ?? L[L.length - 1];
+    const w = lvl[2];
+    const d = lvl[3];
+    for (let yy = top - 12; yy < top; yy += 4)
+      for (let i = 0; i <= 6; i++) {
+        const x = -w / 2 + (i / 6) * w;
+        for (const z of [-d / 2, d / 2]) {
+          if (n >= 400) break;
+          m4.compose(new THREE.Vector3(x, yy + 2, z), new THREE.Quaternion(), new THREE.Vector3(1, 4, 1));
+          frame.setMatrixAt(n++, m4);
+        }
+        if (n < 400) {
+          m4.compose(new THREE.Vector3(0, yy + 4, -d / 2), new THREE.Quaternion(), new THREE.Vector3(w, 0.6, 0.6));
+          frame.setMatrixAt(n++, m4);
+        }
+      }
+    frame.count = n;
+    frame.instanceMatrix.needsUpdate = true;
+    derrick.position.set(w / 2 - 4, top, 0);
+    derrick.rotation.y = f * 0.03;
+    // tilt up with the rising top
+    g.camera.position.set(-150 + e * 20, 30 + e * 90, 260);
+    g.camera.fov = 52;
+    g.camera.lookAt(new THREE.Vector3(0, Math.max(80, top - 40), 0));
+    g.camera.updateProjectionMatrix();
+  };
+};
+
+const shot = (setup: (g: GL) => (f: number, t: number) => void) => {
+  const C: React.FC = () => <GLShot setup={setup} />;
+  return <C />;
+};
 
 export const ingenuity: SceneDef = {
   id: "ingenuity",
   seedBase: 50,
   shots: [
-    { from: 0, dur: c(2), el: <LocoShot />, enter: "burn", origin: [1500, 300], name: "locomotive" },
-    { from: c(2), dur: c(3.5) - c(2), el: <SpikeShot hits={SPIKE_HITS} />, enter: "whip", name: "golden spike" },
-    { from: c(3.5), dur: c(5) - c(3.5), el: <BulbShot />, enter: "punch", name: "light bulb" },
-    { from: c(5), dur: c(7) - c(5), el: <FlyerShot />, enter: "flash", name: "wright flyer" },
-    { from: c(7), dur: c(8.5) - c(7), el: <ModelTShot />, enter: "whip", name: "model t" },
-    { from: c(8.5), dur: c(10.5) - c(8.5), el: <DamShot />, enter: "ink", origin: [960, 600], name: "hoover dam" },
-    { from: c(10.5), dur: c(12.5) - c(10.5), el: <BridgeShot />, enter: "whip", name: "golden gate" },
-    { from: c(12.5), dur: c(15) - c(12.5), el: <EmpireShot />, enter: "whipUp", name: "empire state" },
+    { from: 0, dur: c(2), el: shot(locoSetup), enter: "burn", origin: [1500, 300], name: "locomotive" },
+    { from: c(2), dur: c(3.5) - c(2), el: shot(spikeSetup), enter: "whip", name: "golden spike" },
+    { from: c(3.5), dur: c(5) - c(3.5), el: shot(bulbSetup), enter: "punch", name: "light bulb" },
+    { from: c(5), dur: c(7) - c(5), el: shot(flyerSetup), enter: "flash", name: "wright flyer" },
+    { from: c(7), dur: c(8.5) - c(7), el: shot(modelTSetup), enter: "whip", name: "model t" },
+    { from: c(8.5), dur: c(10.5) - c(8.5), el: shot(damSetup), enter: "ink", origin: [960, 600], name: "hoover dam" },
+    { from: c(10.5), dur: c(12.5) - c(10.5), el: shot(bridgeSetup), enter: "whip", name: "golden gate" },
+    { from: c(12.5), dur: c(15) - c(12.5), el: shot(esbSetup), enter: "whipUp", name: "empire state" },
   ],
   hits: [
     { f: c(0.5), amp: 16, dur: 14, punch: 0.03 },
@@ -540,4 +627,3 @@ export const ingenuity: SceneDef = {
     </>
   ),
 };
-
