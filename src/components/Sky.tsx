@@ -36,16 +36,21 @@ export const EngravedSky: React.FC<{
     const second = cross ? hatch([rectP(x, y, w, h)], { angle: 0, spacing: spacing * 0.5, tone, threshold: 0.75, step: 8, seed: seed + "b", trim: 6 }) : "";
     return base + second;
   });
+  // In full colour the sky becomes a rich gradient (deep blue into sky blue,
+  // or into dawn orange); in sepia it stays a light wash over the paper.
+  const color = pal.mode === "color";
+  const top = color ? (wash === "night" ? pal.night : pal.skyDeep) : tok(pal, wash, pal.skyDeep);
+  const bottom = color ? (wash === "dawn" ? pal.dawn : wash === "night" ? pal.skyDeep : pal.sky) : tok(pal, wash, pal.sky);
   return (
     <g>
       <defs>
         <linearGradient id={id} x1="0" y1={darkTop ? "0" : "1"} x2="0" y2={darkTop ? "1" : "0"}>
-          <stop offset="0" stopColor={tok(pal, wash, pal.skyDeep)} stopOpacity={washOp} />
-          <stop offset="1" stopColor={tok(pal, wash, pal.sky)} stopOpacity={washOp * 0.2} />
+          <stop offset="0" stopColor={top} stopOpacity={color ? 0.95 : washOp} />
+          <stop offset="1" stopColor={bottom} stopOpacity={color ? 0.9 : washOp * 0.2} />
         </linearGradient>
       </defs>
       <rect x={x} y={y} width={w} height={h} fill={`url(#${id})`} />
-      <path d={d} fill="none" stroke={pal.ink} strokeWidth={width} opacity={0.55} strokeLinecap="round" />
+      <path d={d} fill="none" stroke={pal.ink} strokeWidth={width} opacity={color ? 0.3 : 0.55} strokeLinecap="round" />
     </g>
   );
 };

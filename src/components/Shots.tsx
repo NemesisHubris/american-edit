@@ -205,7 +205,7 @@ export const Shots: React.FC<{ shots: ShotSpec[]; overlay?: boolean; seedBase?: 
   return (
     <AbsoluteFill style={{ backgroundColor: "#0b0704", overflow: "hidden" }}>
       {layers}
-      {overlay && top && <PaperOverlay seed={topIndex + seedBase} {...top.overlay} />}
+      {overlay && top && <PaperOverlay seed={topIndex + seedBase} {...(top.palette === "color" ? { texture: 0.55, grain: 0.1 } : {})} {...top.overlay} />}
       <AbsoluteFill>
         <svg width={1920} height={1080}>{edges}</svg>
       </AbsoluteFill>
