@@ -29,6 +29,8 @@ type Emit = {
   opacity?: number;
   outline?: number; // ink outline width
   color?: string;
+  // moving emitter: where the emitter was at a given frame
+  emitterAt?: (frame: number) => [number, number];
 };
 
 const puffPath = (cx: number, cy: number, r: number, s: number, t: number) => {
@@ -70,8 +72,9 @@ export const Smoke: React.FC<Emit> = (p) => {
     const vx = (p.vx ?? 0) + Math.cos(ang) * spd;
     const vy = (p.vy ?? -1.5) + Math.sin(ang) * spd * 0.7;
     const k = tau * (1 - Math.exp(-a / tau));
-    const x = p.x + vx * k + (p.wind ?? 0) * a + noise1(a / 25 + i, seed) * size * 0.3;
-    const y = p.y + vy * k - (p.rise ?? 0) * a;
+    const [ex, ey] = p.emitterAt ? p.emitterAt(birth) : [p.x, p.y];
+    const x = ex + vx * k + (p.wind ?? 0) * a + noise1(a / 25 + i, seed) * size * 0.3;
+    const y = ey + vy * k - (p.rise ?? 0) * a;
     const r = size * (0.5 + 0.5 * hash(i, seed, 4)) * (0.35 + (p.grow ?? 1.6) * (1 - Math.exp(-a / (life * 0.35))));
     const op = (p.opacity ?? 0.95) * clamp(a / 3) * clamp((life - a) / (life * 0.45));
     if (op <= 0.01) continue;
