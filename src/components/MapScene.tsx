@@ -289,8 +289,10 @@ export const MapBase: React.FC<{ cues: MapCues; showCartouche?: boolean; cartouc
         const flash = cues.allFilled ? 0 : clamp(1 - Math.abs(p - 0.6) * 3);
         return (
           <g key={s.id}>
-            <path d={s.d} fill={pal.ground} opacity={0.45 * p} />
-            {flash > 0 && <path d={s.d} fill={pal.glow} opacity={0.5 * flash} />}
+            <path d={s.d} fill={pal.ground} opacity={0.62 * p} />
+            <path d={s.d} fill={`url(#${uid}h)`} opacity={0.25 * p} />
+            {flash > 0 && <path d={s.d} fill={pal.glow} opacity={0.7 * flash} />}
+            <path d={s.d} fill="none" stroke={pal.ink} strokeWidth={2} opacity={p} />
           </g>
         );
       })}

@@ -3,7 +3,7 @@ import { useCurrentFrame } from "remotion";
 import { clamp, TAU } from "../lib/math";
 import { usePalette } from "../lib/palette";
 import { hash, noise1, seedOf } from "../lib/random";
-import { Pt, polyD, smoothD } from "../lib/engrave";
+import { hatch, Pt, polyD, smoothD } from "../lib/engrave";
 import { useUid } from "../lib/uid";
 import { tok } from "./InkDraw";
 
@@ -77,8 +77,22 @@ export const InkSea: React.FC<{
   );
 };
 
-// A breaking wave seen from the side: the face rises, the lip curls over and
-// crashes into foam, then the cycle repeats. `phase` 0..1 can be driven.
+// A breaking wave seen from the side, built from keyframed silhouettes: a
+// swell rises, the crest pitches forward into a curling lip over a shadowed
+// barrel, then the lip plunges and explodes into foam. `phase` 0..1 drives it.
+const SWELL: [number, number][] = [
+  [-0.5, 0], [-0.3, 0.12], [-0.12, 0.3], [0, 0.42], [0.1, 0.43], [0.18, 0.39], [0.24, 0.33], [0.27, 0.28],
+  [0.25, 0.3], [0.22, 0.32], [0.18, 0.34], [0.2, 0.26], [0.24, 0.16], [0.3, 0.07], [0.42, 0],
+];
+const PLUNGE: [number, number][] = [
+  [-0.5, 0], [-0.32, 0.24], [-0.14, 0.62], [0, 0.95], [0.13, 1.0], [0.25, 0.9], [0.32, 0.7], [0.3, 0.5],
+  [0.24, 0.6], [0.16, 0.72], [0.08, 0.78], [0.03, 0.58], [0.05, 0.33], [0.15, 0.12], [0.36, 0],
+];
+const CRASHED: [number, number][] = [
+  [-0.5, 0], [-0.32, 0.2], [-0.12, 0.45], [0.02, 0.62], [0.16, 0.62], [0.3, 0.45], [0.38, 0.25], [0.4, 0.1],
+  [0.33, 0.2], [0.24, 0.32], [0.12, 0.42], [0.06, 0.3], [0.08, 0.16], [0.16, 0.06], [0.36, 0],
+];
+
 export const CrashWave: React.FC<{
   x: number;
   y: number;
@@ -88,78 +102,86 @@ export const CrashWave: React.FC<{
   offset?: number;
   seed?: string;
   flip?: boolean;
-}> = ({ x, y, w = 700, h = 260, period = 60, offset = 0, seed = "crash", flip }) => {
+  phase?: number;
+}> = ({ x, y, w = 700, h = 260, period = 60, offset = 0, seed = "crash", flip, phase }) => {
   const f = useCurrentFrame();
   const pal = usePalette();
   const s = seedOf(seed);
-  const ph = (((f + offset) % period) + period) % period / period;
-  const rise = clamp(ph / 0.45);
-  const curl = clamp((ph - 0.3) / 0.4);
-  const crash = clamp((ph - 0.62) / 0.38);
-  const H = h * (0.35 + 0.65 * Math.sin(rise * Math.PI * 0.5)) * (1 - crash * 0.55);
-  const R = H * 0.42;
-  const cx = x + w * 0.1 + curl * w * 0.08;
-  const cy = y - H + R;
-  // back slope
-  const pts: Pt[] = [];
-  for (let i = 0; i <= 12; i++) {
-    const t = i / 12;
-    pts.push([x - w * 0.5 + t * (w * 0.6), y - H * Math.pow(Math.sin((t * Math.PI) / 2), 1.6)]);
-  }
-  // curl
-  const sweep = 0.3 + curl * 3.4;
-  for (let i = 1; i <= 14; i++) {
-    const a = -Math.PI / 2 + (sweep * i) / 14;
-    const rr = R * (1 - (0.45 * i) / 14);
-    pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
-  }
-  const face: Pt[] = [];
-  for (let i = 0; i <= 10; i++) {
-    const t = i / 10;
-    face.push([cx + R * 0.6 - t * R * 0.2 + t * t * w * 0.15, cy + R * 0.2 + t * (y - cy - R * 0.2)]);
-  }
-  const outline = smoothD(pts);
-  const body = polyD([...pts, ...face.slice().reverse().map(([a, b]) => [a, b] as Pt), [x + w * 0.4, y], [x - w * 0.5, y]]);
-  // interior contour lines follow the face
+  const ph = phase ?? (((f + offset) % period) + period) % period / period;
+  const curl = clamp(ph / 0.62);
+  const crash = clamp((ph - 0.62) / 0.3);
+  const ec = curl * curl * (3 - 2 * curl);
+  const shape = SWELL.map(([sx, sy], i) => {
+    const [px, py] = PLUNGE[i];
+    const [cx2, cy2] = CRASHED[i];
+    const ax = sx + (px - sx) * ec;
+    const ay = sy + (py - sy) * ec;
+    return [x + (ax + (cx2 - ax) * crash) * w, y - (ay + (cy2 - ay) * crash) * h] as Pt;
+  });
+  const back = shape.slice(0, 5);
+  const lipOut = shape.slice(3, 8);
+  const tip = shape[7];
+  const under = shape.slice(7, 11);
+  const face = shape.slice(10);
+  const body = smoothD(shape.concat([[x - 0.5 * w, y]]), true, 0.4);
+  const tubePts: Pt[] = [...under, [shape[11][0] + w * 0.02, shape[11][1] + h * 0.1], [tip[0] - w * 0.02, tip[1] + h * 0.12]];
   const contours: string[] = [];
-  for (let k = 1; k <= 7; k++) {
-    const kk = k / 8;
-    const c: Pt[] = [];
-    for (let i = 0; i <= 12; i++) {
-      const t = i / 12;
-      c.push([x - w * 0.35 + t * w * 0.55 + kk * 20, y - H * kk * Math.pow(Math.sin((t * Math.PI) / 2), 1.2) * 0.95 + noise1(t * 3 + k, s) * 5]);
-    }
-    contours.push(smoothD(c));
+  for (let k = 1; k <= 14; k++) {
+    const kk = k / 15;
+    contours.push(smoothD(shape.slice(0, 7).map(([px, py], i) => [px + kk * w * 0.03 * i * 0.3, y - (y - py) * (1 - kk * 0.92) + noise1(i + k * 0.7, s) * h * 0.006] as Pt)));
   }
+  const faceLines: string[] = [];
+  for (let k = 1; k <= 6; k++) faceLines.push(smoothD(face.map(([px, py], i) => [px - k * w * 0.012 * (1 - i / face.length), py - k * h * 0.012] as Pt)));
+  const streaks: string[] = [];
+  for (let i = 0; i < 16; i++) {
+    const t = hash(i, s, 9);
+    const k = Math.min(3, Math.floor(t * 4));
+    const [px0, py0] = back[k];
+    const [px1, py1] = back[k + 1];
+    const px = px0 + (px1 - px0) * (t * 4 - k);
+    const py = py0 + (py1 - py0) * (t * 4 - k) + h * (0.04 + hash(i, s, 7) * 0.25);
+    const len = w * (0.02 + hash(i, s, 8) * 0.05);
+    streaks.push(`M${px.toFixed(1)} ${py.toFixed(1)}l${len.toFixed(1)} ${(-len * 0.45).toFixed(1)}`);
+  }
+  const fingers: string[] = [];
+  lipOut.concat([tip]).forEach(([px, py], i) => {
+    for (let j = 0; j < 3; j++) {
+      const len = w * (0.012 + hash(i, j, s) * 0.03) * (0.4 + curl);
+      const a = 0.4 + i * 0.35 + j * 0.3;
+      fingers.push(`M${px.toFixed(1)} ${py.toFixed(1)}q${(Math.cos(a) * len * 0.5).toFixed(1)} ${(-len * 0.2).toFixed(1)} ${(Math.cos(a) * len).toFixed(1)} ${(Math.sin(a) * len).toFixed(1)}`);
+    }
+  });
   const spray: React.ReactNode[] = [];
-  if (curl > 0.2) {
-    for (let i = 0; i < 26; i++) {
-      const a = crash > 0 ? crash : curl * 0.3;
-      const ang = -Math.PI * (0.2 + hash(i, s) * 0.7);
-      const v = 60 + hash(i, s, 2) * 160;
-      const px = cx + R + Math.cos(ang) * v * a * 1.4;
-      const py = y - H * 0.4 + Math.sin(ang) * v * a + 120 * a * a;
-      spray.push(<circle key={i} cx={px} cy={py} r={2 + hash(i, s, 3) * 5} fill={pal.foam} stroke={pal.ink} strokeWidth={0.8} opacity={1 - crash * 0.8} />);
+  if (curl > 0.7) {
+    const a = crash > 0 ? 0.3 + crash : (curl - 0.7);
+    for (let i = 0; i < 44; i++) {
+      const ang = -Math.PI * (0.05 + hash(i, s) * 0.85);
+      const v = w * (0.05 + hash(i, s, 2) * 0.25);
+      const px = tip[0] + Math.cos(ang) * v * a;
+      const py = tip[1] + h * 0.2 + Math.sin(ang) * v * a * 0.9 + w * 0.1 * a * a;
+      spray.push(<circle key={i} cx={px} cy={py} r={(2 + hash(i, s, 3) * 6) * Math.max(1, w / 700)} fill={pal.foam} stroke={pal.ink} strokeWidth={0.8} opacity={1 - crash * 0.6} />);
     }
   }
+  const lw = Math.max(1, w / 900);
   return (
-    <g transform={flip ? `translate(${2 * x} 0) scale(-1 1)` : undefined}>
-      <path d={body} fill={pal.water} opacity={0.85} />
-      <path d={contours.join("")} fill="none" stroke={pal.ink} strokeWidth={1.4} opacity={0.6} />
-      <path d={outline} fill="none" stroke={pal.ink} strokeWidth={3} strokeLinecap="round" />
-      <path d={smoothD(face)} fill="none" stroke={pal.ink} strokeWidth={2} opacity={0.7} />
-      {curl > 0.3 && (
-        <path
-          d={smoothD([
-            [cx + R * 0.9, cy - R * 0.2],
-            [cx + R * 1.25, cy + R * 0.2],
-            [cx + R * 1.1 + crash * 30, cy + R * 0.8],
-          ])}
-          fill="none"
-          stroke={pal.foam}
-          strokeWidth={7}
-          strokeLinecap="round"
-        />
+    <g transform={flip ? `translate(${2 * x} 0) scale(-1 1)` : undefined} strokeLinecap="round" strokeLinejoin="round">
+      <path d={body} fill={pal.water} opacity={0.93} />
+      <path d={contours.join("")} fill="none" stroke={pal.ink} strokeWidth={1.3 * lw} opacity={0.7} />
+      <path d={streaks.join("")} fill="none" stroke={pal.foam} strokeWidth={3 * lw} opacity={0.85} />
+      {curl > 0.35 && (
+        <g opacity={clamp((curl - 0.35) / 0.3)}>
+          <path d={smoothD(tubePts, true)} fill={pal.waterDeep} />
+          <path d={hatch([tubePts], { angle: 75, spacing: 4 * lw, seed })} fill="none" stroke={pal.ink} strokeWidth={1.2 * lw} opacity={0.8} />
+          <path d={faceLines.join("")} fill="none" stroke={pal.ink} strokeWidth={1.2 * lw} opacity={0.7} />
+        </g>
+      )}
+      <path d={smoothD(shape.slice(0, 11))} fill="none" stroke={pal.ink} strokeWidth={3 * lw} />
+      <path d={smoothD(face)} fill="none" stroke={pal.ink} strokeWidth={2.2 * lw} />
+      <path d={smoothD(shape.slice(2, 8))} fill="none" stroke={pal.foam} strokeWidth={5 * lw} opacity={0.95} />
+      <path d={fingers.join("")} fill="none" stroke={pal.foam} strokeWidth={3 * lw} />
+      <path d={fingers.join("")} fill="none" stroke={pal.ink} strokeWidth={0.8 * lw} opacity={0.5} />
+      {crash > 0 && (
+        <ellipse cx={tip[0]} cy={y - h * 0.15} rx={w * 0.22 * crash + 10} ry={h * 0.22 * crash + 5} fill={pal.foam} opacity={0.8 * (1 - crash * 0.5)} stroke={pal.ink} strokeWidth={1.2} />
       )}
       {spray}
     </g>

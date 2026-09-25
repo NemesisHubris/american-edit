@@ -30,7 +30,7 @@ Living-engravings American history edit — 1920x1080, 30fps, 1:45 (3150 frames)
 |---|-------|--------|-------|
 | 1 | Cold open | done | Boot in lunar dust (low-gravity grains), flag on windswept ridge, Saturn V F-1 ignition; flash cuts on beats; black card with 13-star ring, embers, shockwave; YearSlam 1776 impact on the 2.0s beat. Motion check PASS (min 0.99 on the dark card). |
 | 2 | The Founding | done | Candle flicker w/ light pool + swaying shadow; quill dips and writes "IN CONGRESS, July 4, 1776." in real time (camera tracks pen); Independence Hall draws at dawn w/ rising sun, sweeping rays, birds, tilt up the spire; Liberty Bell swings, crack draws in; muskets on stone wall in rolling fog; night crossing w/ oars, drifting ice, snow. Transitions: burn, morph, whip, ink, morph, ink. Declaration quote 5.5–11s. Motion PASS (min 1.03). |
-| 3 | Manifest Destiny | todo | |
+| 3 | Manifest Destiny | done | 1805 slam over the map drawing itself (border, cartouche, spinning compass, coastal water-lines, ships); original states inked; Louisiana wash spreads from St. Louis; L&C dotted trail with paddling canoe to Fort Clatsop, camera follows; Pacific bluff w/ explorers, sea stacks, gulls; close curling breaker (new keyframed CrashWave); Alamo framed inset draws with drifting smoke & embers; wagon train w/ turning wheels, walking oxen, dust, jagged Rockies; states fill east->west with Oregon Trail wagons. 3 quotes (Clark, Alamo, O'Sullivan). Motion PASS (min 1.16). |
 | 4 | A Nation Tested | todo | |
 | 5 | American Ingenuity | todo | |
 | 6 | The Greatest Generation | todo | |
