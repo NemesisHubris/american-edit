@@ -1,303 +1,387 @@
-// 6. THE GREATEST GENERATION — 1944. Heavier shake. Landing craft ramps slam
-// down in rough surf, spray hits the lens; hedgehogs in drifting smoke; a
-// helmet in the sand as waves wash over; fighters roar past; the flag rises.
-import { AbsoluteFill, useCurrentFrame } from "remotion";
-import { Camera, Layer } from "../components/Camera";
-import { InkDraw } from "../components/InkDraw";
-import { Paper } from "../components/Parchment";
-import { Dust, Embers, Fog, Smoke, Sparks } from "../components/Particles";
-import { Clouds, EngravedSky, Sun } from "../components/Sky";
-import { CrashWave, InkSea } from "../components/Water";
-import { Flag } from "../components/Cloth";
+// 6. THE GREATEST GENERATION — "1944". Landing craft ramps slam down in rough
+// surf with spray on the lens; steel hedgehogs on the beach as smoke drifts;
+// a helmet in the sand as the waves wash over it; fighters roar past in
+// formation over the ocean; the flag raised as a silhouette against the sky.
+import * as THREE from "three";
 import { YearSlam } from "../components/YearSlam";
 import { Quote } from "../components/WordPop";
 import { QUOTES } from "../quotes";
-import { Fighter3D, hedgehog, helmetItems, Higgins3D, raisingFigures, rubbleMound } from "../art/ww2";
-import { F, groundHatch, HT, L } from "../art/kit";
-import { hatch, polyD, Pt, smoothD } from "../lib/engrave";
-import { clamp, easeIn, easeOut, lerp, memo } from "../lib/math";
-import { usePalette } from "../lib/palette";
-import { hash, noise1 } from "../lib/random";
-import { DEFAULT_CAM, project, Pose } from "../lib/three";
 import { sceneClock } from "../timeline";
+import { hash, rng } from "../lib/random";
+import { GLShot, GL, driveCamera } from "../gl/GLShot";
+import { makeSky } from "../gl/sky";
+import { higginsGeo, hedgehogGeo, helmetGeo, mustangGeo, propBladesGeo } from "../gl/models/ww2";
+import { makeGround, makeWater } from "../gl/env";
+import { makeFigure, Pose } from "../gl/figure";
+import { makeFlag } from "../gl/models/flag";
+import { terrain } from "../gl/geo";
+import { fbm2 } from "../gl/noise";
+import { emit, Glows, Puff, Puffs, Smoke } from "../gl/particles";
 import type { SceneDef } from "./types";
 
 const c = sceneClock("greatest");
+const RAMPS = [c(0.5) + 6, 36, 51];
 
-const rampAngle = (f: number, t0: number) => {
-  const a = f - t0;
-  if (a < 0) return 0.05 * Math.sin(f / 3);
-  if (a < 6) return easeIn(a / 6) * 1.75;
-  return 1.75 - Math.sin(Math.min(Math.PI, (a - 6) * 0.5)) * 0.12 * Math.exp(-(a - 6) / 8);
+const overcast = (g: GL, o: { dark?: number } = {}) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.3, 0.4, -0.85).normalize();
+  sh.uSunCol.value.set(0.9, 0.85, 0.78);
+  sh.uSky.value.set(0.55, 0.56, 0.6);
+  sh.uGround.value.set(0.28, 0.27, 0.25);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#6a7684", horizon: "#c8c4b8", bottom: "#7a7a74", glow: 0.4, sunSize: 0.05, rays: 0.4, lines: 0.75, lineSpacing: 4, clouds: 0.6, cloudSpeed: 0.08, cloudScale: 1.2, cloudHeight: 0.15, cloudCol: "#e6e4de", cloudShade: "#5c5c60", paper: 0.1 + (o.dark ?? 0) });
+  g.scene.add(sky.mesh);
+  return sky;
 };
 
-// A. Higgins boats in rough surf; ramps slam down; spray hits the lens
-const LandingShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const boats: { pose: Pose; t0: number }[] = [
-    { pose: { pos: [-8, -1.1 + Math.sin(f / 7 + 1) * 0.2, 22], yaw: 0.45, pitch: Math.sin(f / 8 + 1) * 0.05, roll: Math.sin(f / 9) * 0.05 }, t0: 30 },
-    { pose: { pos: [7.5, -1.1 + Math.sin(f / 6 + 2) * 0.2, 27], yaw: -0.4, pitch: Math.sin(f / 7 + 2) * 0.05, roll: Math.sin(f / 10 + 1) * 0.05 }, t0: 45 },
-    { pose: { pos: [0.6, -1.2 + Math.sin(f / 6) * 0.25, 10], yaw: 0.32, pitch: Math.sin(f / 7) * 0.06, roll: Math.sin(f / 8) * 0.04 }, t0: 15 },
-  ];
-  const hero = boats[2];
-  const tipW = project([hero.pose.pos[0], hero.pose.pos[1] - 0.2, hero.pose.pos[2] - 2.3], DEFAULT_CAM);
-  const slam = f - 21;
-  return (
-    <AbsoluteFill>
-      <Camera keys={[{ f: 0, z: 1.02 }, { f: 75, z: 1.1, y: 10 }]} handheld={10} seed={61}>
-        <Layer depth={0.08}>
-          <Paper />
-          <EngravedSky h={900} y={-300} dark={0.6} cross />
-          <Smoke x={300} y={500} rate={0.3} life={120} size={120} vx={0.5} vy={-2} spread={0.6} shade={0.9} seed="col1" />
-          <Smoke x={1500} y={500} rate={0.25} life={120} size={140} vx={-0.4} vy={-2.2} spread={0.6} shade={0.9} seed="col2" />
-        </Layer>
-        <Layer depth={0.5}>
-          <InkSea top={520} rows={42} amp={26} speed={2.4} drift={2} seed="surf" />
-          <CrashWave x={260} y={760} w={700} h={210} period={40} seed="lw1" />
-          <CrashWave x={1600} y={740} w={640} h={200} period={46} offset={20} seed="lw2" flip />
-        </Layer>
-        <Layer depth={1}>
-          {boats.map((b, i) => {
-            const bow = project([b.pose.pos[0], b.pose.pos[1] - 0.3, b.pose.pos[2]], DEFAULT_CAM);
-            const k = 10 / b.pose.pos[2];
-            return (
-              <g key={i}>
-                <Higgins3D at={b.pose} ramp={rampAngle(f, b.t0)} troops={clamp((f - b.t0) / 6)} />
-                {bow && (
-                  <path
-                    d={`M${bow[0] - 260 * k} ${bow[1]}q${130 * k} ${-50 * k - Math.sin(f / 4 + i) * 20 * k} ${260 * k} 0q${130 * k} ${-50 * k - Math.sin(f / 5 + i) * 20 * k} ${260 * k} 0`}
-                    fill="none"
-                    stroke={pal.foam}
-                    strokeWidth={14 * k}
-                    strokeLinecap="round"
-                  />
-                )}
-              </g>
-            );
-          })}
-          {tipW && slam >= 0 && (
-            <g>
-              <Smoke x={tipW[0]} y={tipW[1] + 40} count={16} start={21} life={34} size={130} spread={9} vy={-3} shade={0} color="foam" outline={1.4} seed="slam" />
-              <Sparks x={tipW[0]} y={tipW[1]} t0={21} count={70} speed={30} gravity={1} life={26} color="foam" spread={Math.PI * 1.2} seed="slamsp" width={4} />
-            </g>
-          )}
-          <InkSea top={1000} bottom={1300} rows={8} amp={30} speed={3} drift={3} seed="fgsea" lineOp={1} />
-        </Layer>
-      </Camera>
-      {/* spray droplets on the lens */}
-      <AbsoluteFill>
-        <svg width={1920} height={1080}>
-          {slam >= 0 &&
-            Array.from({ length: 26 }, (_, i) => {
-              const a = slam - hash(i, 7) * 6;
-              if (a < 0) return null;
-              const x = hash(i, 1) * 1920;
-              const y = hash(i, 2) * 900 + a * a * 0.05 * hash(i, 3);
-              const r = 18 + hash(i, 4) * 60;
-              return (
-                <g key={i} opacity={Math.max(0, 0.75 - a * 0.012)}>
-                  <circle cx={x} cy={y} r={r} fill={pal.foam} opacity={0.25} />
-                  <circle cx={x} cy={y} r={r} fill="none" stroke={pal.foam} strokeWidth={3} opacity={0.6} />
-                  <circle cx={x - r * 0.3} cy={y - r * 0.3} r={r * 0.2} fill="#fff" opacity={0.7} />
-                </g>
-              );
-            })}
-        </svg>
-      </AbsoluteFill>
-    </AbsoluteFill>
-  );
-};
-
-// B. Steel hedgehogs on the beach as smoke drifts across
-const BeachShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const geo = memo("gg:beach", () => {
-    const bluff: Pt[] = [[-500, 560], ...Array.from({ length: 40 }, (_, i) => [-500 + i * 80, 420 - Math.sin(i * 0.5) * 30 - Math.sin(i * 0.2) * 40] as Pt), [2700, 560]];
-    const sand: Pt[] = [[-500, 560], [2700, 560], [2700, 1400], [-500, 1400]];
-    return {
-      bluff: [F(polyD(bluff), "foliage", 0.35), HT(hatch([bluff], { angle: 70, spacing: 4, seed: "bl" }), 1, 0.45), L(smoothD(bluff.slice(1, -1)), 1.6)],
-      sand: [F(polyD(sand), "sand", 0.75), HT(groundHatch(-500, 2700, 570, 1350, "bs", 6), 1, 0.7)],
-      hogs: [
-        { x: 260, y: 1010, s: 2.2 },
-        { x: 1500, y: 900, s: 1.6 },
-        { x: 900, y: 760, s: 1.0 },
-        { x: 1250, y: 680, s: 0.65 },
-        { x: 400, y: 660, s: 0.6 },
-        { x: 1750, y: 640, s: 0.5 },
-      ].map((h, i) => ({ ...h, items: hedgehog(h.s, `hh${i}`) })),
-    };
+// A. Higgins boats pitching in rough surf; ramps slam down; troops; spray on the lens
+const landingSetup = (g: GL) => {
+  overcast(g);
+  g.setPost({ fog: [80, 900, 0.45], fogCol: "#c8c6bc" });
+  const sea = makeWater(g, { w: 400, d: 400, res: 300, y: 0, color: "#34403f", sky: "#6e7a78", amp: 1.1, freq: 0.32, speed: 1.4, lineSpacing: 3.5, glitter: 0.3 });
+  g.scene.add(sea.mesh);
+  const beach = makeGround(g, { size: 3000, res: 120, y: -2, amp: 30, freq: 0.003, color: "#a89a7a", flat: (x, z) => (z < -300 ? 1 : 0) });
+  g.scene.add(beach.mesh);
+  const bluffs = new THREE.Mesh(terrain(3000, 400, 200, 60, (x, z) => (z < 0 ? 0 : 1) * 0 + Math.max(0, 1 - Math.abs(z) / 200) * (40 + fbm2(x * 0.01, z * 0.02, 4, 3) * 50)), g.ink({ color: "#8a8a6a", mode: "screen", angle: 60, scale: 3.5, cross: 0.6 }));
+  bluffs.position.set(0, -10, -520);
+  g.scene.add(bluffs);
+  const H = higginsGeo();
+  const hullM = g.ink({ color: "#5d6650", mode: "screen", angle: 70, scale: 3.5, cross: 0.6, rim: 0.4, side: THREE.DoubleSide });
+  const boats = [
+    { x: 0, z: 0, ph: 0, ramp: RAMPS[0] },
+    { x: -14, z: -22, ph: 1.3, ramp: RAMPS[1] },
+    { x: 15, z: -30, ph: 2.1, ramp: RAMPS[2] },
+    { x: -30, z: -60, ph: 0.7, ramp: 999 },
+    { x: 32, z: -70, ph: 2.9, ramp: 999 },
+  ].map((b, bi) => {
+    const grp = new THREE.Group();
+    grp.add(new THREE.Mesh(H.hull, hullM));
+    const rampPivot = new THREE.Group();
+    rampPivot.position.set(0, 0.2, 4.0);
+    rampPivot.add(new THREE.Mesh(H.ramp, hullM));
+    grp.add(rampPivot);
+    // troops packed inside, helmets and packs
+    const troops: ReturnType<typeof makeFigure>[] = [];
+    if (bi < 3)
+      for (let k = 0; k < 12; k++) {
+        const f = makeFigure(g, "gi");
+        f.root.position.set(-1.0 + (k % 3) * 1.0, 0.15, 2.8 - Math.floor(k / 3) * 1.6);
+        f.pose({ bend: 0.25, lSh: [0.9, 0.2, 0], rSh: [1.1, 0.3, 0], lEl: 1.4, rEl: 1.2, crouch: 0.15, lKn: 0.3, rKn: 0.3, lHip: [0.3, 0.1], rHip: [0.3, 0.1] });
+        grp.add(f.root);
+        troops.push(f);
+      }
+    grp.rotation.y = 0.05 * (bi - 2);
+    g.scene.add(grp);
+    return { ...b, grp, rampPivot, troops };
   });
-  return (
-    <Camera keys={[{ f: 0, z: 1.08, x: 60 }, { f: 45, z: 1.14, x: -60 }]} handheld={8} seed={62}>
-      <Layer depth={0.1}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.55} />
-      </Layer>
-      <Layer depth={0.3}>
-        <InkDraw items={geo.bluff} start={-6} dur={8} />
-        <Fog y={450} h={200} speed={2} opacity={0.7} seed="bf" />
-      </Layer>
-      <Layer depth={0.8}>
-        <InkDraw items={geo.sand} start={-6} dur={8} />
-        <path d={`M-500 ${600 + Math.sin(f / 8) * 10}Q400 ${590 + Math.sin(f / 7) * 12} 1200 ${605}T2700 ${600}`} stroke={pal.foam} strokeWidth={6} fill="none" />
-        {geo.hogs
-          .slice()
-          .sort((a, b) => a.y - b.y)
-          .map((h, i) => (
-            <g key={i} transform={`translate(${h.x} ${h.y})`}>
-              <ellipse cx={0} cy={0} rx={130 * h.s} ry={16 * h.s} fill={pal.ink} opacity={0.3} />
-              <InkDraw items={h.items} start={-4 + i} dur={8} washAt={0} washDur={4} />
-            </g>
-          ))}
-        <Smoke x={1900} y={650} rate={0.45} life={80} size={220} vx={-14} vy={-0.8} spread={1} shade={0.85} seed="bsm1" />
-        <Fog y={640} h={320} speed={-9} opacity={0.55} color="smoke" count={10} seed="bsmog" />
-        <Embers x={700} y={900} w={600} count={40} rise={3} seed="bemb" />
-      </Layer>
-      <Layer depth={1.4}>
-        <Smoke x={2100} y={950} rate={0.4} life={70} size={280} vx={-20} vy={-0.5} spread={1} shade={0.9} seed="bsm2" />
-        <Dust count={50} speed={2} color="inkSoft" seed="bdst" />
-      </Layer>
-    </Camera>
-  );
-};
-
-// C. A helmet in the sand; waves wash over it and retreat
-const HelmetShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const helmet = memo("gg:helmet", helmetItems);
-  const ripples = memo("gg:ripples", () => {
-    const out: string[] = [];
-    for (let k = 0; k < 16; k++) {
-      const y = 620 + k * 32;
-      out.push(smoothD(Array.from({ length: 12 }, (_, i) => [-300 + i * 220, y + Math.sin(i * 1.3 + k) * 10] as Pt)));
+  const foam = new Puffs(g.shared, 700, { lit: "#ffffff", shade: "#b8c0c0", outline: 0.25, hatch: 0.3, lineSpacing: 4, soft: 0.45, rough: 0.45 });
+  g.scene.add(foam.mesh);
+  const drops = new Glows(g.shared, 60, "#d8e4e8", 0.6);
+  g.scene.add(drops.mesh);
+  const smoke = new Smoke(g, 120, { color: "#6e6a64", hatch: 1, inkDark: 0.15 });
+  g.scene.add(smoke.mesh);
+  return (f: number, t: number) => {
+    const fl: Puff[] = [];
+    boats.forEach((b, bi) => {
+      const bob = Math.sin(t * 1.6 + b.ph) * 0.5;
+      const pitch = Math.sin(t * 1.3 + b.ph) * 0.1;
+      const surge = Math.min(1, t / 3) * 6;
+      b.grp.position.set(b.x, bob, b.z + surge);
+      b.grp.rotation.x = pitch;
+      b.grp.rotation.z = Math.sin(t * 1.1 + b.ph * 2) * 0.05;
+      // ramp: up, then slams down with a bounce
+      const a = (f - b.ramp) / 30;
+      let ang = 0;
+      if (a > 0) ang = Math.min(1.35, a * a * 18) - (a > 0.28 ? Math.exp(-(a - 0.28) * 10) * Math.sin((a - 0.28) * 40) * 0.1 : 0);
+      b.rampPivot.rotation.x = ang;
+      if (a > 0.25 && a < 1.0) {
+        const age = a - 0.25;
+        for (let i = 0; i < 70; i++) {
+          const ang2 = (hash(i, bi) - 0.5) * 2.6;
+          const v = 3 + hash(i, bi, 2) * 6;
+          fl.push({ x: b.x + Math.sin(ang2) * v * age * 1.3, y: 0.3 + (2 + hash(i, bi, 3) * 5) * age - 4.9 * age * age, z: b.grp.position.z + 6 + Math.cos(ang2) * v * age, size: 0.4 + age * 1.6, alpha: 1 - age / 0.75, seed: hash(i, bi, 4) * 9 });
+        }
+      }
+      // bow wave + wake
+      for (let i = 0; i < 16; i++) {
+        const u = hash(i, bi, 7);
+        fl.push({ x: b.x + (u - 0.5) * 4, y: 0.2 + Math.abs(bob) * 0.3, z: b.grp.position.z + 4.5 + hash(i, bi, 8), size: 0.5 + hash(i, bi, 9) * 0.8, alpha: 0.7, seed: i + t });
+      }
+      // troops surge forward once the ramp is down
+      b.troops.forEach((tr, k) => {
+        const go = Math.max(0, a - 0.35 - k * 0.04);
+        tr.root.position.z = 2.8 - Math.floor(k / 3) * 1.6 + go * 5;
+        tr.pose(go > 0 ? { bend: 0.4, lHip: [Math.sin(t * 9 + k) * 0.6, 0.1], rHip: [-Math.sin(t * 9 + k) * 0.6, 0.1], lKn: 0.6, rKn: 0.6, lSh: [1.0, 0.3, 0], rSh: [1.2, 0.3, 0], lEl: 1.4, rEl: 1.2 } : { bend: 0.25, lSh: [0.9, 0.2, 0], rSh: [1.1, 0.3, 0], lEl: 1.4, rEl: 1.2, crouch: 0.15, lKn: 0.3, rKn: 0.3, lHip: [0.3, 0.1], rHip: [0.3, 0.1] });
+      });
+    });
+    // whitecaps scattered on the chop around the boats
+    for (let i = 0; i < 160; i++) {
+      const x = (hash(i, 60) - 0.5) * 80;
+      const z = (hash(i, 61) - 0.5) * 80;
+      const ph = (t * 0.8 + hash(i, 62)) % 1;
+      fl.push({ x, y: 0.4 + Math.sin(ph * Math.PI) * 0.4, z, size: 0.5 + hash(i, 63) * 1.2, alpha: Math.sin(ph * Math.PI) * 0.8, seed: i });
     }
-    return out.join("");
+    // breaking surf ahead
+    for (let i = 0; i < 180; i++) {
+      const x = (hash(i, 50) - 0.5) * 200;
+      const ph = (t * 0.6 + hash(i, 51)) % 1;
+      fl.push({ x, y: 0.5 + Math.sin(ph * Math.PI) * 1.8, z: 40 + ph * 16 + hash(i, 52) * 5, size: 1 + hash(i, 53) * 2, alpha: Math.sin(ph * Math.PI) * 0.8, seed: i });
+    }
+    foam.set(fl, g.camera);
+    const sm: Puff[] = [];
+    emit({ at: [-80, 10, -400], rate: 10, life: 8, vel: [3, 3, 0], spread: 2, size: [10, 40], drag: 0.3, alpha: 0.8, seed: 3, prewarm: 8, jitter: [100, 5, 40] }, t, sm);
+    smoke.set(sm);
+    // spray on the lens after the first ramp
+    const la = (f - RAMPS[0]) / 30;
+    const dr: Puff[] = [];
+    if (la > 0.2) {
+      const cp = g.camera.position;
+      const fw = new THREE.Vector3();
+      g.camera.getWorldDirection(fw);
+      const right = new THREE.Vector3().crossVectors(fw, g.camera.up).normalize();
+      const up = new THREE.Vector3().crossVectors(right, fw);
+      for (let i = 0; i < 40; i++) {
+        const age = la - 0.2 - hash(i, 90) * 0.3;
+        if (age < 0) continue;
+        const p = cp.clone().addScaledVector(fw, 0.6).addScaledVector(right, (hash(i, 91) - 0.5) * 1.1).addScaledVector(up, (hash(i, 92) - 0.5) * 0.6 - age * 0.05);
+        dr.push({ x: p.x, y: p.y, z: p.z, size: 0.008 + hash(i, 93) * 0.02, alpha: Math.max(0, 0.7 - age * 0.5) });
+      }
+    }
+    drops.set(dr, g.camera);
+    const lb = boats[0].grp.position;
+    driveCamera(g, [{ f: 0, pos: [lb.x + 5, 1.1, lb.z + 11], look: [lb.x - 0.5, 1.4, lb.z + 1], fov: 52 }, { f: 75, pos: [lb.x + 4, 0.9, lb.z + 10], look: [lb.x - 0.5, 1.2, lb.z + 2], fov: 54 }], f, 0.04, 61);
+  };
+};
+
+// B. Steel hedgehogs on the beach, smoke banks drifting, a distant blast
+const beachSetup = (g: GL) => {
+  overcast(g, { dark: 0.05 });
+  g.setPost({ fog: [30, 600, 0.5], fogCol: "#c4bcae", fogNoise: 0.6, fogTop: 0.3 });
+  const sand = new THREE.Mesh(terrain(800, 800, 240, 240, (x, z) => (fbm2(x * 0.02, z * 0.02, 4, 7) - 0.5) * 1.2 + z * 0.01 + Math.sin(x * 0.3 + z * 0.1) * 0.05), g.ink({ color: "#c2b08a", mode: "stipple", hatch: 0.9 }));
+  g.scene.add(sand);
+  const sea = makeWater(g, { w: 1200, d: 600, res: 160, y: -0.6, color: "#34403f", sky: "#6e7a78", amp: 0.6, freq: 0.15, lineSpacing: 4 });
+  sea.mesh.position.z = 345;
+  g.scene.add(sea.mesh);
+  const hhM = g.ink({ color: "#4a4642", mode: "screen", angle: 20, scale: 3.5, spec: 0.6, rim: 0.5, instanced: true, frag: "albedo *= 0.8 + tvn(vWorld.xy * 5.0) * 0.4;" });
+  const hh = new THREE.InstancedMesh(hedgehogGeo(), hhM, 60);
+  const r = rng("hh");
+  for (let i = 0; i < 60; i++) {
+    const near = i < 14;
+    const x = near ? -9 + (i % 5) * 4.5 + r() * 2 : (r() - 0.5) * 160;
+    const z = near ? 31 - Math.floor(i / 5) * 6 + r() * 2 : -30 + r() * 50;
+    hh.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(x, 0.6, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 0.3, r() * 6, r() * 0.3)), new THREE.Vector3(1, 1, 1)));
+  }
+  hh.frustumCulled = false;
+  g.scene.add(hh);
+  // barbed-wire coils, stakes and wreckage in the foreground
+  const wireM = g.ink({ color: "#3a3632", hatch: 0.3, instanced: true });
+  const coil = new THREE.TorusKnotGeometry(0.35, 0.012, 200, 5, 1, 12);
+  const coils = new THREE.InstancedMesh(coil, wireM, 16);
+  for (let i = 0; i < 16; i++) coils.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(-14 + i * 1.4 + r() * 0.3, 0.3, 31.5 + Math.sin(i) * 0.4), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)), new THREE.Vector3(1, 1, 1.6)));
+  coils.frustumCulled = false;
+  g.scene.add(coils);
+  const stakeM = g.ink({ color: "#5a4a38", mode: "screen", angle: 80, scale: 3.5, instanced: true });
+  const stakes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 1.4, 0.08), stakeM, 24);
+  for (let i = 0; i < 24; i++) stakes.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(-18 + i * 1.6, 0.5, 30 - (i % 3) * 5 + r()), new THREE.Quaternion().setFromEuler(new THREE.Euler((r() - 0.5) * 0.5, 0, (r() - 0.5) * 0.5)), new THREE.Vector3(1, 1, 1)));
+  stakes.frustumCulled = false;
+  g.scene.add(stakes);
+  const debrisM = g.ink({ color: "#6a6456", mode: "screen", angle: 30, scale: 3.5, instanced: true });
+  const debris = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), debrisM, 30);
+  for (let i = 0; i < 30; i++) debris.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(-12 + r() * 24, 0.05, 20 + r() * 15), new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 0.5, r() * 6, r() * 0.5)), new THREE.Vector3(0.2 + r() * 0.8, 0.1 + r() * 0.3, 0.2 + r() * 0.6)));
+  debris.frustumCulled = false;
+  g.scene.add(debris);
+  const smoke = new Smoke(g, 300, { color: "#6a6660", hatch: 1, inkDark: 0.15 });
+  g.scene.add(smoke.mesh);
+  const embers = new Glows(g.shared, 120, "#ffb060", 1);
+  g.scene.add(embers.mesh);
+  const flash = new Glows(g.shared, 4, "#ffd9a0", 1.2);
+  g.scene.add(flash.mesh);
+  return (f: number, t: number) => {
+    const sm: Puff[] = [];
+    emit({ at: [-60, 1, -20], rate: 20, life: 8, vel: [6, 2.2, 1], spread: 1.5, size: [2, 10], drag: 0.3, alpha: 0.85, seed: 4, prewarm: 8, jitter: [10, 1, 30] }, t, sm);
+    emit({ at: [-30, 0.5, 20], rate: 8, life: 6, vel: [4, 1.2, 0], spread: 1, size: [1, 5], drag: 0.3, alpha: 0.8, seed: 8, prewarm: 6, jitter: [5, 0.5, 6] }, t, sm);
+    const blastT = (c(3) - c(2.5)) / 30;
+    emit({ at: [30, 1, -60], rate: 60, life: 3, vel: [0, 8, 0], spread: 5, size: [2, 12], drag: 0.8, heat: 1, heatFade: 0.5, alpha: 1, start: blastT, stop: blastT + 0.3, seed: 5 }, t, sm);
+    smoke.set(sm);
+    const a = t - blastT;
+    flash.set(a > 0 && a < 0.3 ? [{ x: 30, y: 4, z: -60, size: 30 * (1 - a / 0.3), alpha: 1 }] : [], g.camera);
+    const em: Puff[] = [];
+    for (let i = 0; i < 100; i++) {
+      const u = (hash(i, 1) + t * 0.2) % 1;
+      em.push({ x: -40 + hash(i, 2) * 80 + Math.sin(t + i) * 2, y: u * 12, z: -20 + hash(i, 3) * 40, size: 0.08, alpha: Math.sin(u * Math.PI) });
+    }
+    embers.set(em, g.camera);
+    driveCamera(g, [{ f: 0, pos: [-7, 0.6, 34.5], look: [2, 1.1, 10], fov: 50 }, { f: 45, pos: [-4, 0.55, 33.5], look: [4, 1.2, 8], fov: 50 }], f, 0.012, 62);
+  };
+};
+
+// C. A helmet in the sand; the wash advances and recedes over it
+const helmetSetup = (g: GL) => {
+  const sh = g.shared;
+  overcast(g);
+  sh.uSunDir.value.set(-0.6, 0.22, 0.75).normalize();
+  sh.uSunCol.value.set(1.2, 1.0, 0.75);
+  g.camera.near = 0.01;
+  g.camera.far = 400;
+  g.setPost({ fog: [4, 60, 0.6], fogCol: "#c8c2b4" });
+  const sand = new THREE.Mesh(terrain(40, 40, 300, 300, (x, z) => (fbm2(x * 0.5, z * 0.5, 4, 7) - 0.5) * 0.04 + z * 0.02 + Math.sin(x * 9 + z * 2 + fbm2(x, z, 2, 1) * 3) * 0.012), g.ink({ color: "#b8a680", mode: "stipple", hatch: 0.9, frag: "albedo *= 0.8 + step(0.0, -vWorld.z) * 0.0 + tvn(vWorld.xz * 20.0) * 0.3;" }));
+  g.scene.add(sand);
+  const Hm = helmetGeo();
+  const helmetM = g.ink({ color: "#5e6248", mode: "screen", angle: 30, scale: 3.5, spec: 0.5, gloss: 20, rim: 0.6, frag: "albedo *= 0.75 + tvn(vObj.xz * 30.0) * 0.4; extraInk += step(0.8, tvn(vObj.xy * 40.0)) * 0.3;" });
+  const helmet = new THREE.Group();
+  helmet.add(new THREE.Mesh(Hm.shell, helmetM), new THREE.Mesh(Hm.strap, g.ink({ color: "#6a5a40" })));
+  helmet.position.set(0, -0.02, 0);
+  helmet.rotation.set(0.12, 0.6, 0.18);
+  g.scene.add(helmet);
+  // the wash: a thin sheet of water that slides up and back
+  const wash = makeWater(g, { w: 40, d: 30, res: 160, y: 0, color: "#4a5a5a", sky: "#8a9694", amp: 0.015, freq: 1.5, speed: 1, lineSpacing: 3, glitter: 1 });
+  g.scene.add(wash.mesh);
+  const foam = new Puffs(sh, 400, { lit: "#ffffff", shade: "#c0c4c0", outline: 0.3, hatch: 0.3, lineSpacing: 3, soft: 0.35, rough: 0.5 });
+  g.scene.add(foam.mesh);
+  return (f: number, t: number) => {
+    const edge = 1.2 - Math.max(0, Math.sin(t * 1.8 - 0.4)) * 2.4; // z of the water's edge (moving toward -z covers)
+    wash.mesh.position.set(0, 0.01, edge + 15);
+    const fl: Puff[] = [];
+    for (let i = 0; i < 360; i++) {
+      const x = (hash(i, 1) - 0.5) * 4;
+      fl.push({ x, y: 0.012 + hash(i, 2) * 0.006, z: edge + Math.sin(x * 3 + i) * 0.06 + hash(i, 3) * 0.05, size: 0.01 + hash(i, 4) * 0.02, alpha: 0.9, seed: hash(i, 5) * 9 });
+    }
+    foam.set(fl, g.camera);
+    driveCamera(g, [{ f: 0, pos: [0.9, 0.2, -0.9], look: [0, 0.07, 0.25], fov: 40 }, { f: 45, pos: [0.75, 0.17, -0.75], look: [0, 0.07, 0.25], fov: 38 }], f, 0.003, 63);
+  };
+};
+
+// D. P-51s roar past in formation over the ocean
+const fighterSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.4, 0.55, 0.7).normalize();
+  sh.uSunCol.value.set(1.15, 1.05, 0.9);
+  sh.uSky.value.set(0.5, 0.55, 0.62);
+  sh.uGround.value.set(0.3, 0.3, 0.3);
+  g.camera.far = 5000;
+  const sky = makeSky(sh, { top: "#5f7a98", horizon: "#d8dcd8", bottom: "#6a7680", glow: 0.6, rays: 0.4, lines: 0.75, lineSpacing: 4, clouds: 0.4, cloudSpeed: 0.12, cloudScale: 1.2, cloudCol: "#ffffff", cloudShade: "#8c96a0", paper: 0.15 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [300, 3000, 0.55], fogCol: "#d0d4d2" });
+  const sea = makeWater(g, { w: 6000, d: 6000, res: 200, y: 0, color: "#3e5260", sky: "#c0c8cc", amp: 1.2, freq: 0.05, lineSpacing: 4 });
+  g.scene.add(sea.mesh);
+  const M = mustangGeo();
+  const alu = g.ink({ color: "#b8bcc0", mode: "screen", angle: 20, scale: 3.5, spec: 1.3, gloss: 40, rim: 0.7, frag: "extraInk += step(0.96, fract(vObj.z * 1.2)) * 0.3; if (vObj.z > 4.2) albedo = vec3(0.8, 0.2, 0.15);" });
+  const glass = g.ink({ color: "#3a4a58", spec: 2, gloss: 80, hatch: 0.3, rim: 1 });
+  const planes = [0, 1, 2, 3].map(() => {
+    const grp = new THREE.Group();
+    grp.add(new THREE.Mesh(M.body, alu), new THREE.Mesh(M.canopy, glass), new THREE.Mesh(M.spinner, alu));
+    const prop = new THREE.Mesh(propBladesGeo(), g.ink({ color: "#2a2a2a", hatch: 0.2 }));
+    prop.position.z = 5.05;
+    grp.add(prop);
+    g.scene.add(grp);
+    return { grp, prop };
   });
-  const phase = f * 0.16 + 0.4;
-  const reach = Math.max(0, Math.sin(phase));
-  const edge = 380 + reach * 520;
-  const water: Pt[] = [[-300, -300], [2300, -300], [2300, edge - 40], ...Array.from({ length: 30 }, (_, i) => [2300 - i * 90, edge + Math.sin(i * 0.9 + f * 0.3) * 18 + noise1(i * 0.7, 3) * 20] as Pt), [-300, edge]];
-  const foam = water.slice(3);
-  return (
-    <Camera keys={[{ f: 0, z: 1.06, y: 10, x: -40 }, { f: 45, z: 1.24, y: 40, x: 40 }]} handheld={6} seed={63}>
-      <Layer depth={0.5}>
-        <Paper />
-        <rect x={-400} y={-400} width={2720} height={1900} fill={pal.sand} opacity={0.7} />
-        <path d={ripples} stroke={pal.ink} strokeWidth={1.6} fill="none" opacity={0.6} />
-        <path d={groundHatch(-400, 2320, 300, 1400, "hs", 7)} stroke={pal.ink} strokeWidth={1} fill="none" opacity={0.4} />
-      </Layer>
-      <Layer depth={1}>
-        <ellipse cx={1010} cy={775} rx={330} ry={60} fill={pal.ink} opacity={0.35} />
-        <g transform="translate(1000 760) rotate(-8)">
-          <InkDraw items={helmet} start={-6} dur={10} hatchAt={0} washAt={0} washDur={4} />
-        </g>
-        <path d="M640 790Q800 740 1000 780T1380 790L1400 840L620 840Z" fill={pal.sand} />
-        <path d="M640 790Q800 740 1000 780T1380 790" stroke={pal.ink} strokeWidth={2} fill="none" />
-        <path d={polyD(water)} fill={pal.water} opacity={0.42} />
-        <path d={hatch([water], { angle: 0, spacing: 9, seed: "wsh" })} stroke={pal.foam} strokeWidth={1.5} opacity={0.5} />
-        <path d={smoothD(foam)} stroke={pal.foam} strokeWidth={10} fill="none" />
-        <path d={smoothD(foam)} stroke={pal.ink} strokeWidth={1.4} fill="none" opacity={0.6} />
-        {Array.from({ length: 40 }, (_, i) => {
-          const x = hash(i, 1) * 2200 - 150;
-          const y = edge - 20 - hash(i, 2) * 200;
-          return <circle key={i} cx={x} cy={y} r={2 + hash(i, 3) * 5} fill="none" stroke={pal.foam} strokeWidth={2} opacity={0.8} />;
-        })}
-      </Layer>
-      <Layer depth={1.5}>
-        <Dust count={24} speed={1} color="foam" seed="hdst" />
-      </Layer>
-    </Camera>
-  );
+  const streaks = new Glows(sh, 200, "#ffffff", 0.2);
+  g.scene.add(streaks.mesh);
+  const form: [number, number, number][] = [
+    [0, 0, 0],
+    [-12, -2, -10],
+    [12, -2, -10],
+    [-24, -4, -20],
+  ];
+  return (f: number, t: number) => {
+    const z0 = -110 + t * 120;
+    planes.forEach((p, i) => {
+      const [ox, oy, oz] = form[i];
+      p.grp.position.set(ox + Math.sin(t * 2 + i) * 0.6, 40 + oy + Math.sin(t * 1.7 + i) * 0.5, z0 + oz);
+      p.grp.rotation.set(-0.02, 0, 0.15 + Math.sin(t * 1.5 + i) * 0.05);
+      p.prop.rotation.z = t * 60;
+    });
+    const st: Puff[] = [];
+    for (let i = 0; i < 80; i++) {
+      const u = (hash(i, 1) + t * 3) % 1;
+      st.push({ x: (hash(i, 2) - 0.5) * 60, y: 30 + hash(i, 3) * 25, z: z0 + 40 - u * 120, size: 0.15, alpha: 0.5, stretch: 30 });
+    }
+    streaks.set(st, g.camera);
+    // camera: low over the waves, the formation roars over and past
+    g.camera.position.set(14, 33, 30);
+    g.camera.lookAt(new THREE.Vector3(-2, 39, Math.min(z0 + 6, 45)));
+    g.camera.fov = 50;
+    g.camera.rotateZ(Math.sin(t * 20) * 0.004 * Math.max(0, 1 - Math.abs(z0 - 40) / 60));
+    g.camera.updateProjectionMatrix();
+  };
 };
 
-// D. Fighters roar past in formation over the ocean
-const fighterPose = (f: number, i: number): Pose => {
-  const t = clamp((f - i * 5) / 52);
-  const z = lerp(80, -6, Math.pow(t, 1.25));
-  return { pos: [3 + i * 5 + t * 3, 1.5 + i * 1.6 - t * 0.5, z], yaw: -0.08, roll: -0.25 - i * 0.05, pitch: 0.03 };
+// E. Raising the flag: six silhouettes push the pole up against a moving sky
+const raisePoses = (k: number): Pose[] => [
+  { bend: 0.5 - k * 0.2, lSh: [1.6 + k * 0.6, 0.2, 0], rSh: [1.5 + k * 0.6, 0.2, 0], lEl: 0.3, rEl: 0.3, lHip: [0.6, 0.1], rHip: [-0.3, 0.1], lKn: 0.6, rKn: 0.2 },
+  { bend: 0.6 - k * 0.2, lSh: [1.4 + k * 0.7, 0.3, 0], rSh: [1.7 + k * 0.6, 0.2, 0], lEl: 0.4, rEl: 0.2, lHip: [-0.2, 0.1], rHip: [0.7, 0.1], lKn: 0.2, rKn: 0.7, crouch: 0.1 },
+  { bend: 0.7 - k * 0.3, lSh: [1.2 + k * 0.8, 0.2, 0], rSh: [1.3 + k * 0.8, 0.2, 0], lEl: 0.5, rEl: 0.5, lHip: [0.8, 0.1], rHip: [0.1, 0.1], lKn: 0.9, rKn: 0.4, crouch: 0.2 },
+];
+const raisingSetup = (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.15, 0.3, -1).normalize();
+  sh.uSunCol.value.set(1.2, 1.0, 0.75);
+  sh.uSky.value.set(0.3, 0.3, 0.34);
+  sh.uGround.value.set(0.12, 0.11, 0.1);
+  g.camera.far = 3000;
+  const sky = makeSky(sh, { top: "#4e5e78", horizon: "#f0d4a8", bottom: "#4a4038", glow: 1.2, sunSize: 0.07, rays: 1.2, rayCount: 24, lines: 0.75, lineSpacing: 4, clouds: 0.55, cloudSpeed: 0.3, cloudScale: 1.3, cloudHeight: 0.15, cloudCol: "#fff2d8", cloudShade: "#6a625c", paper: 0.1 });
+  g.scene.add(sky.mesh);
+  const summit = new THREE.Mesh(terrain(80, 80, 120, 120, (x, z) => -Math.pow(Math.hypot(x, z) / 30, 2) * 6 + (fbm2(x * 0.2, z * 0.2, 4, 3) - 0.5) * 1.6), g.ink({ color: "#3a3430", mode: "screen", angle: 30, scale: 3.5, cross: 0.8 }));
+  g.scene.add(summit);
+  const dark = { coat: "#141210", pants: "#141210", hat: "#141210", skin: "#1a1614" };
+  const pivot = new THREE.Group();
+  pivot.position.set(0, -0.2, 0);
+  g.scene.add(pivot);
+  const poleM = g.ink({ color: "#1a1612", hatch: 0.4, rim: 1.4, rimCol: "#ffd9a0" });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 6.4, 10).translate(0, 3.2, 0), poleM);
+  pivot.add(pole);
+  const flag = makeFlag(g, { w: 1.8, h: 1.0, stars: 48, wind: 0.22, speed: 2.4 });
+  flag.mesh.position.set(0.02, 6.35, 0);
+  pivot.add(flag.mesh);
+  const men: { fig: ReturnType<typeof makeFigure>; pose: number; at: number }[] = [];
+  const spots: [number, number][] = [
+    [0.1, 0.6],
+    [-0.5, 1.4],
+    [-1.1, 2.0],
+    [-0.3, -0.4],
+    [-1.4, 1.0],
+    [0.5, 1.5],
+  ];
+  spots.forEach(([x, z], i) => {
+    const fig = makeFigure(g, "marine", { color: dark, mat: { rim: 1.6, rimCol: "#ffd9a0", hatch: 0.5 } });
+    fig.root.position.set(x, -0.2, z * 0.4);
+    fig.root.rotation.y = Math.PI / 2 - 0.3;
+    g.scene.add(fig.root);
+    men.push({ fig, pose: i % 3, at: 0.6 + i * 0.35 });
+  });
+  const dust = new Puffs(sh, 80, { lit: "#d8c8b0", shade: "#6a5a4a", outline: 0.1, hatch: 0.3, lineSpacing: 4, soft: 0.6, rough: 0.4 });
+  g.scene.add(dust.mesh);
+  return (f: number, t: number) => {
+    const k = Math.min(1, f / 75);
+    const e = k * k * (3 - 2 * k);
+    const ang = 0.6 + e * 0.5; // from 34 deg to 63 deg above horizontal
+    pivot.rotation.z = -(Math.PI / 2 - ang);
+    men.forEach(({ fig, pose }, i) => {
+      const P = raisePoses(e)[pose];
+      fig.pose({ ...P, lSh: [P.lSh![0] + Math.sin(t * 2 + i) * 0.05, P.lSh![1], 0] });
+    });
+    const d: Puff[] = [];
+    emit({ at: [-1, -0.1, 0.5], rate: 8, life: 3, vel: [2, 0.4, 0], spread: 0.5, size: [0.3, 1.8], drag: 0.5, alpha: 0.4, seed: 3, prewarm: 3, jitter: [2, 0, 1] }, t, d);
+    dust.set(d, g.camera);
+    driveCamera(g, [{ f: 0, pos: [-1, 0.2, 9.5], look: [-0.5, 2.6, 0], fov: 42 }, { f: 75, pos: [-0.4, 0.1, 8.6], look: [-0.3, 2.8, 0], fov: 42 }], f, 0.005, 64);
+  };
 };
 
-const FighterShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  return (
-    <Camera keys={[{ f: 0, z: 1.0 }]} handheld={6} seed={64}>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={900} y={-300} dark={0.35} />
-        <Sun x={400} y={300} r={60} spin={0.3} />
-      </Layer>
-      <Layer depth={0.2}>
-        <Clouds speed={9} clouds={[{ x: 0, y: 120, w: 600, h: 150, seed: "fc1" }, { x: 800, y: 40, w: 520, h: 140, seed: "fc2" }, { x: 1500, y: 180, w: 460, h: 120, seed: "fc3" }]} />
-      </Layer>
-      <Layer depth={0.6}>
-        <InkSea top={560} rows={40} amp={12} speed={2} drift={7} seed="ocean" />
-      </Layer>
-      <Layer depth={1}>
-        {[3, 2, 1, 0].map((i) => (
-          <Fighter3D key={i} at={fighterPose(f, i)} prop={f * 1.3 + i} />
-        ))}
-      </Layer>
-      <Layer depth={1.6}>
-        {Array.from({ length: 30 }, (_, i) => {
-          const sp = 40 + hash(i, 3) * 40;
-          const x = ((hash(i, 1) * 2400 - f * sp) % 2400 + 2400) % 2400 - 240;
-          const y = hash(i, 2) * 1080;
-          return <line key={i} x1={x} y1={y} x2={x + 80 + hash(i, 4) * 120} y2={y} stroke={pal.inkSoft} strokeWidth={1.4} opacity={0.35} />;
-        })}
-      </Layer>
-    </Camera>
-  );
-};
-
-// E. The flag rises on Iwo Jima, silhouetted against a moving sky
-const RaisingShot: React.FC = () => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const mound = memo("gg:mound", rubbleMound);
-  const angle = lerp(34, 64, easeOut(clamp(f / 70)));
-  const fig = raisingFigures(angle);
-  const [tx, ty] = fig.poleTop;
-  const [bx, by] = fig.poleBase;
-  const pd = (Math.atan2(by - ty, bx - tx) * 180) / Math.PI;
-  return (
-    <Camera keys={[{ f: 0, z: 1.0, x: 20 }, { f: 75, z: 1.12, x: -20, y: -20 }]} handheld={5} seed={65}>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={1400} y={-300} dark={0.45} wash="dawn" washOp={0.3} />
-        <Sun x={1300} y={420} r={90} rays={36} spin={0.4} rayLen={1700} />
-      </Layer>
-      <Layer depth={0.2}>
-        <Clouds speed={4} clouds={[{ x: -200, y: 60, w: 700, h: 170, seed: "ic1" }, { x: 700, y: 10, w: 540, h: 140, seed: "ic2" }, { x: 1400, y: 150, w: 620, h: 160, seed: "ic3" }]} />
-        <Smoke x={200} y={800} rate={0.2} life={120} size={110} vx={1} vy={-1.5} spread={0.6} shade={0.8} seed="ism" />
-      </Layer>
-      <Layer depth={1}>
-        <g transform={`translate(${tx} ${ty}) rotate(${pd - 90})`}>
-          <Flag x={0} y={0} w={330} h={200} amp={0.9} speed={0.8} waves={1.4} stars={48} droop={0.25} />
-        </g>
-        <line x1={bx} y1={by} x2={tx} y2={ty} stroke={pal.ink} strokeWidth={12} strokeLinecap="round" />
-        <path d={fig.d} fill={pal.ink} />
-        <InkDraw items={mound} start={-6} dur={8} washAt={0} washDur={3} />
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={40} speed={1.5} color="inkSoft" seed="idust" />
-      </Layer>
-    </Camera>
-  );
+const shot = (setup: (g: GL) => (f: number, t: number) => void) => {
+  const C: React.FC = () => <GLShot setup={setup} />;
+  return <C />;
 };
 
 export const greatest: SceneDef = {
   id: "greatest",
   seedBase: 60,
   shots: [
-    { from: 0, dur: c(2.5), el: <LandingShot />, enter: "whip", name: "landing craft" },
-    { from: c(2.5), dur: c(4) - c(2.5), el: <BeachShot />, enter: "burn", origin: [1600, 900], name: "hedgehogs" },
-    { from: c(4), dur: c(5.5) - c(4), el: <HelmetShot />, enter: "ink", origin: [1000, 700], name: "helmet" },
-    { from: c(5.5), dur: c(7.5) - c(5.5), el: <FighterShot />, enter: "whip", name: "fighters" },
-    { from: c(7.5), dur: c(10) - c(7.5), el: <RaisingShot />, enter: "morph", name: "flag raising" },
+    { from: 0, dur: c(2.5), el: shot(landingSetup), enter: "whip", name: "landing craft" },
+    { from: c(2.5), dur: c(4) - c(2.5), el: shot(beachSetup), enter: "burn", origin: [1600, 900], name: "hedgehogs" },
+    { from: c(4), dur: c(5.5) - c(4), el: shot(helmetSetup), enter: "ink", origin: [1000, 700], name: "helmet" },
+    { from: c(5.5), dur: c(7.5) - c(5.5), el: shot(fighterSetup), enter: "whip", name: "fighters" },
+    { from: c(7.5), dur: c(10) - c(7.5), el: shot(raisingSetup), enter: "morph", name: "flag raising" },
   ],
   hits: [
     { f: c(0.5) + 6, amp: 30, dur: 18, punch: 0.04 },
@@ -315,4 +399,3 @@ export const greatest: SceneDef = {
     </>
   ),
 };
-
