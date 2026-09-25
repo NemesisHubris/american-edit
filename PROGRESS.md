@@ -29,7 +29,7 @@ Living-engravings American history edit — 1920x1080, 30fps, 1:45 (3150 frames)
 | # | Scene | Status | Notes |
 |---|-------|--------|-------|
 | 1 | Cold open | done | Boot in lunar dust (low-gravity grains), flag on windswept ridge, Saturn V F-1 ignition; flash cuts on beats; black card with 13-star ring, embers, shockwave; YearSlam 1776 impact on the 2.0s beat. Motion check PASS (min 0.99 on the dark card). |
-| 2 | The Founding | todo | |
+| 2 | The Founding | done | Candle flicker w/ light pool + swaying shadow; quill dips and writes "IN CONGRESS, July 4, 1776." in real time (camera tracks pen); Independence Hall draws at dawn w/ rising sun, sweeping rays, birds, tilt up the spire; Liberty Bell swings, crack draws in; muskets on stone wall in rolling fog; night crossing w/ oars, drifting ice, snow. Transitions: burn, morph, whip, ink, morph, ink. Declaration quote 5.5–11s. Motion PASS (min 1.03). |
 | 3 | Manifest Destiny | todo | |
 | 4 | A Nation Tested | todo | |
 | 5 | American Ingenuity | todo | |
