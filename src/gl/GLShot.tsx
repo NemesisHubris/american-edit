@@ -5,6 +5,7 @@ import { cancelRender, continueRender, delayRender, useCurrentFrame, useVideoCon
 import * as THREE from "three";
 import { usePalette } from "../lib/palette";
 import { InkRenderer, H, W } from "./core";
+import { fontsReady } from "../fonts";
 
 export type GL = InkRenderer & { fps: number };
 export type Update = (f: number, t: number) => void;
@@ -19,18 +20,44 @@ export const GLShot: React.FC<{ setup: Setup; ss?: number; flood?: Flood; color?
   const canvas = useRef<HTMLCanvasElement>(null);
   const st = useRef<{ g: GL; update: Update } | null>(null);
 
+  const drawFrame = (s: { g: GL; update: Update }, fr: number) => {
+    const t = fr / fps;
+    s.g.shared.uTime.value = t;
+    s.update(fr, t);
+    let mix = (color ?? pal.mode === "color") ? 1 : 0;
+    let fl: { x: number; y: number; r: number } | undefined;
+    if (flood) {
+      if (fr >= flood.at + flood.dur) mix = 1;
+      else if (fr >= flood.at) {
+        const p = (fr - flood.at) / flood.dur;
+        const e = 1 - Math.pow(1 - p, 2.2);
+        fl = { x: flood.origin[0] / W, y: 1 - flood.origin[1] / H, r: e * 2.4 + 0.01 };
+        mix = 0;
+      } else mix = 0;
+    }
+    s.g.render(mix, fl);
+  };
+  const frameRef = useRef(f);
+  frameRef.current = f;
+
+  // Setup waits for web fonts (canvas textures may draw text), then renders
+  // whatever frame is current.
   useLayoutEffect(() => {
     const handle = delayRender("GL setup");
-    try {
-      const g = new InkRenderer(canvas.current!, ss) as GL;
-      g.fps = fps;
-      const update = setup(g);
-      st.current = { g, update };
-      continueRender(handle);
-    } catch (e) {
-      cancelRender(e as Error);
-    }
+    let dead = false;
+    fontsReady
+      .then(() => {
+        if (dead) return;
+        const g = new InkRenderer(canvas.current!, ss) as GL;
+        g.fps = fps;
+        const update = setup(g);
+        st.current = { g, update };
+        drawFrame(st.current, frameRef.current);
+        continueRender(handle);
+      })
+      .catch((e) => cancelRender(e as Error));
     return () => {
+      dead = true;
       st.current?.g.dispose();
       st.current = null;
     };
@@ -42,21 +69,7 @@ export const GLShot: React.FC<{ setup: Setup; ss?: number; flood?: Flood; color?
     if (!s) return;
     const handle = delayRender("GL frame");
     try {
-      const t = f / fps;
-      s.g.shared.uTime.value = t;
-      s.update(f, t);
-      let mix = (color ?? pal.mode === "color") ? 1 : 0;
-      let fl: { x: number; y: number; r: number } | undefined;
-      if (flood) {
-        if (f >= flood.at + flood.dur) mix = 1;
-        else if (f >= flood.at) {
-          const p = (f - flood.at) / flood.dur;
-          const e = 1 - Math.pow(1 - p, 2.2);
-          fl = { x: flood.origin[0] / W, y: 1 - flood.origin[1] / H, r: e * 2.4 + 0.01 };
-          mix = 0;
-        } else mix = 0;
-      }
-      s.g.render(mix, fl);
+      drawFrame(s, f);
       continueRender(handle);
     } catch (e) {
       cancelRender(e as Error);

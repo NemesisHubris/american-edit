@@ -18,7 +18,7 @@ export const canvasTex = (key: string, w: number, h: number, draw: (ctx: CanvasR
   });
   const t = new THREE.CanvasTexture(cv);
   t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.anisotropy = 4;
+  t.anisotropy = 8;
   return t;
 };
 

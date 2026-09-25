@@ -13,11 +13,11 @@ const FONTS: [string, string, FontFaceDescriptors][] = [
 ];
 
 const handle = delayRender("Loading fonts");
-Promise.all(
+// resolves once every face is loaded and added (canvas text needs this)
+export const fontsReady = Promise.all(
   FONTS.map(([family, file, desc]) => {
     const face = new FontFace(family, `url('${staticFile(file)}')`, desc);
     return face.load().then(() => document.fonts.add(face));
   }),
-)
-  .then(() => continueRender(handle))
-  .catch((err) => cancelRender(err));
+);
+fontsReady.then(() => continueRender(handle)).catch((err) => cancelRender(err));

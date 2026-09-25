@@ -187,6 +187,9 @@ export class InkRenderer {
     this.ss = ss;
     this.shared.uSS.value = ss;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, alpha: false, powerPreference: "high-performance" });
+    this.renderer.debug.onShaderError = (gl, _p, vs, fs) => {
+      throw new Error(`Shader compile failed:\n${gl.getShaderInfoLog(vs)}\n${gl.getShaderInfoLog(fs)}`);
+    };
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(W, H, false);
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
