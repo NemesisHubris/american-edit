@@ -25,6 +25,15 @@ Living-engravings American history edit — 1920x1080, 30fps, 1:45 (3150 frames)
 - [x] YearSlam (extended: Cinzel, splatter, exit), WordPop + Quote (gradient, attribution)
 - [x] MapScene (us-atlas lower 48, coastlines w/o land borders, Louisiana Purchase region, rivers, L&C + Oregon trails, compass, cartouche, ships)
 
+## 3D rebuild (after first review)
+Feedback: the SVG drawings read as flat / clip-art (stick figures, bare circles, empty gaps).
+Everything was rebuilt on a three.js engraving renderer (`src/gl/`):
+- [x] Engine: G-buffer (colour + normal/depth/id) -> ink-contour post pass, tone-driven engraving hatching (screen / surface-following / stipple), draw-on reveal, shadows, sepia grading with an ink-edged colour flood, blueprint sweep, texture noise
+- [x] Kits: engraved sky (sun, rays, clouds, stars), water, reeds/grass, bushes/trees, birds, sprite + 3D smoke, fire, glows, glass, cloth flag (13/48/50 stars), posable human figures with costumes
+- [x] Models: Saturn V + launch tower, Moon (baked craters), Earth (world-atlas), LM, boot, astronaut; Independence Hall, Liberty Bell, desk/quill/candle, muskets, boats; Napoleon gun, fence, Lincoln Memorial; 4-4-0 locomotive, spike, Edison lamp, Wright Flyer, Model T, Hoover Dam, Golden Gate, Empire State; Higgins boat, hedgehogs, helmet, P-51; Berlin Wall (graffiti), PCB, CRTs, phone, jets, Rushmore relief, Grand Canyon, skyline; Alamo, wagons, oxen, sea stacks
+- [x] Transitions: + zoom-through (push past the camera with blur)
+- [x] WordPop: no overshoot (words never collide)
+
 ## Scenes
 | # | Scene | Status | Notes |
 |---|-------|--------|-------|
