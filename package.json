@@ -1,0 +1,22 @@
+{
+  "name": "american-edit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "1920x1080 30fps 1:45 history edit, built with Remotion",
+  "scripts": {
+    "dev": "remotion studio",
+    "render": "remotion render HistoryEdit out/history-edit.mp4",
+    "render:test": "remotion render Test1776 out/test.mp4",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.528",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.528"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}
