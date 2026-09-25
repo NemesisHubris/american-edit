@@ -1,72 +1,79 @@
 // 10. ENDING — silence. The flag ripples in slow motion at sunrise, sun rays
 // sweeping across it; title card "AMERICA" / "EST. 1776"; hold; cut to black.
+import * as THREE from "three";
 import { AbsoluteFill, useCurrentFrame } from "remotion";
-import { Camera, Layer } from "../components/Camera";
-import { Paper } from "../components/Parchment";
-import { Dust, Embers } from "../components/Particles";
-import { Clouds, EngravedSky, Sun } from "../components/Sky";
-import { Flag } from "../components/Cloth";
 import { DISPLAY_FAMILY } from "../fonts";
 import { clamp, easeOut, ramp } from "../lib/math";
-import { usePalette } from "../lib/palette";
-import { useUid } from "../lib/uid";
+import { hash, rng } from "../lib/random";
 import { sceneClock } from "../timeline";
+import { GLShot, GL, driveCamera } from "../gl/GLShot";
+import { makeSky } from "../gl/sky";
+import { makeFlag } from "../gl/models/flag";
+import { makeBirds, makeGround, makeReeds } from "../gl/env";
+import { makeTree } from "../gl/models/civilwar";
+import { Glows, Puff } from "../gl/particles";
 import type { SceneDef } from "./types";
 
 const c = sceneClock("ending");
 
-const SunriseFlag: React.FC<{ wide?: boolean; t0: number }> = ({ wide, t0 }) => {
-  const f = useCurrentFrame();
-  const pal = usePalette();
-  const uid = useUid("sweep");
-  const T = f + t0;
-  const sweepX = -600 + ((T * 9) % 3400);
-  const fx = wide ? 520 : 300;
-  const fy = wide ? 250 : 170;
-  const fw = wide ? 1000 : 1440;
-  const fh = wide ? 540 : 780;
-  return (
-    <>
-      <Layer depth={0.05}>
-        <Paper />
-        <EngravedSky h={1500} y={-400} dark={0.3} wash="dawn" />
-        <Sun x={1560} y={760 - easeOut(clamp(T / 220)) * 260} r={110} rays={44} spin={0.18} rayLen={2200} />
-      </Layer>
-      <Layer depth={0.2}>
-        <Clouds speed={0.8} clouds={[{ x: 0, y: 700, w: 700, h: 160, seed: "ec1" }, { x: 1100, y: 820, w: 600, h: 140, seed: "ec2" }, { x: 600, y: 120, w: 520, h: 130, seed: "ec3" }]} />
-      </Layer>
-      <Layer depth={1}>
-        <defs>
-          <linearGradient id={uid} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="#fff3c4" stopOpacity={0} />
-            <stop offset="0.5" stopColor="#fff3c4" stopOpacity={0.55} />
-            <stop offset="1" stopColor="#fff3c4" stopOpacity={0} />
-          </linearGradient>
-          <clipPath id={`${uid}c`}>
-            <rect x={fx - 40} y={fy - 80} width={fw + 200} height={fh + 200} />
-          </clipPath>
-        </defs>
-        <line x1={fx - 8} y1={fy - 30} x2={fx - 8} y2={1300} stroke={pal.ink} strokeWidth={wide ? 16 : 22} />
-        <line x1={fx - 11} y1={fy - 30} x2={fx - 11} y2={1300} stroke={pal.gold} strokeWidth={wide ? 7 : 10} />
-        <circle cx={fx - 8} cy={fy - 40} r={wide ? 18 : 26} fill={pal.gold} stroke={pal.ink} strokeWidth={3} />
-        <Flag x={fx} y={fy} w={fw} h={fh} amp={1.1} speed={0.32} waves={1.5} stars={50} t={T} />
-        <g clipPath={`url(#${uid}c)`} style={{ mixBlendMode: "screen" }}>
-          <path d={`M${sweepX} ${fy - 100}L${sweepX + 260} ${fy - 100}L${sweepX - 140} ${fy + fh + 200}L${sweepX - 400} ${fy + fh + 200}Z`} fill={`url(#${uid})`} />
-        </g>
-      </Layer>
-      <Layer depth={1.4}>
-        <Dust count={60} speed={0.3} color="glow" size={3} seed="edust" />
-      </Layer>
-    </>
-  );
+// Sunrise over rolling hills; the flag on a tall pole ripples in slow motion,
+// sun rays sweep across it; dust motes drift through the light.
+const sunriseSetup = (wide: boolean, t0: number) => (g: GL) => {
+  const sh = g.shared;
+  sh.uSunDir.value.set(0.75, 0.12, -0.65).normalize();
+  sh.uSunCol.value.set(1.4, 1.0, 0.62);
+  sh.uSky.value.set(0.45, 0.45, 0.58);
+  sh.uGround.value.set(0.3, 0.22, 0.18);
+  g.camera.far = 4000;
+  const sky = makeSky(sh, { top: "#27477e", horizon: "#ffc27a", bottom: "#6a4a3a", glow: 1.4, sunSize: 0.07, sunCol: "#fff0c0", rays: 1.3, rayCount: 30, lines: 0.6, lineSpacing: 4, clouds: 0.3, cloudSpeed: 0.02, cloudScale: 1.2, cloudHeight: 0.18, cloudCol: "#ffd8b0", cloudShade: "#7a5a6a", paper: 0.05 });
+  g.scene.add(sky.mesh);
+  g.setPost({ fog: [200, 2500, 0.55], fogCol: "#f0c090", sat: 1.1 });
+  const hills = makeGround(g, { size: 5000, res: 220, y: -6, amp: 90, freq: 0.0022, color: "#5a6a3a", flat: (x, z) => Math.min(1, Math.hypot(x, z) / 160), mat: { mode: "stipple", hatch: 0.8 } });
+  const r = rng("etrees");
+  for (let i = 0; i < 14; i++) {
+    const tr = makeTree(g, `et${i}`, 12 + r() * 10, 6 + r() * 4, 40);
+    tr.group.position.set(-260 + i * 40 + r() * 20, -3, -180 - r() * 160);
+    g.scene.add(tr.group);
+  }
+  g.scene.add(hills.mesh);
+  const grass = makeReeds(g, { count: 4000, x: [-14, 14], z: [-10, 6], y: -0.1, h: [0.2, 0.7], w: 0.02, color: "#6a7a40", seed: "egrass", sway: 0.15, wind: 0.6, edges: 0 });
+  g.scene.add(grass.mesh);
+  const poleM = g.ink({ color: "#e8e2d4", mode: "screen", angle: 80, scale: 3.2, spec: 1.2, gloss: 50, rim: 0.8 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 14, 16).translate(0, 7, 0), poleM);
+  g.scene.add(pole);
+  const goldM = g.ink({ color: "#d9a640", spec: 2, gloss: 60, rim: 1, rimCol: "#fff0b0", mode: "screen", angle: 40, scale: 3.5 });
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.2, 24, 16), goldM);
+  ball.position.y = 14.15;
+  g.scene.add(ball);
+  const flag = makeFlag(g, { w: 6, h: 3.16, stars: 50, wind: 0.2, speed: 0.4, droop: 0.04, wrinkle: 0.6 });
+  flag.mesh.position.set(0.09, 13.9, 0);
+  flag.mesh.rotation.y = -0.2;
+  g.scene.add(flag.mesh);
+  const motes = new Glows(sh, 160, "#ffe4b0", 0.3);
+  g.scene.add(motes.mesh);
+  const birds = makeBirds(g, { count: 5, from: [-120, 30, -140], to: [120, 42, -160], spread: [20, 6, 10], size: 1.2, dur: 5, seed: "eb" });
+  g.scene.add(birds.mesh);
+  return (f: number) => {
+    const T = (f + t0) / 30;
+    // the light band sweeping across the cloth
+    const sweep = ((T * 0.35) % 1.4) - 0.2;
+    sh.uPL0.value.set(-2 + sweep * 12, 14, 4, 5);
+    sh.uPLc0.value.setRGB(0.9, 0.7, 0.4);
+    sh.uSunDir.value.set(0.75, 0.12 + T * 0.01, -0.65).normalize();
+    birds.update(T);
+    const m: Puff[] = [];
+    for (let i = 0; i < 140; i++) m.push({ x: -6 + hash(i, 1) * 14 + Math.sin(T * 0.4 + i) * 0.3, y: 8 + hash(i, 2) * 8 + Math.sin(T * 0.3 + i * 2) * 0.3, z: -3 + hash(i, 3) * 8, size: 0.03, alpha: 0.5 + 0.4 * Math.sin(T * 2 + i) });
+    motes.set(m, g.camera);
+    if (wide) driveCamera(g, [{ f: 0, pos: [-6, 8.5, 30], look: [-3, 11.5, 0], fov: 38 }, { f: 108, pos: [-6.5, 8.8, 27], look: [-3, 11.8, 0], fov: 38 }], f, 0.002, 102);
+    else driveCamera(g, [{ f: 0, pos: [8, 12.2, 7.5], look: [2.6, 12.4, 0], fov: 40 }, { f: 120, pos: [5.2, 12.6, 8.8], look: [2.8, 12.2, 0], fov: 40 }], f, 0.002, 101);
+  };
 };
 
+const flagSetup = sunriseSetup(false, 0);
+const titleSetup = sunriseSetup(true, 120);
+
 // A. Close on the flag at sunrise, slow motion
-const FlagShot: React.FC = () => (
-  <Camera keys={[{ f: 0, z: 1.12, x: 80, y: 20 }, { f: 120, z: 1.0, x: -20, y: 0 }]} handheld={2} seed={101}>
-    <SunriseFlag t0={0} />
-  </Camera>
-);
+const FlagShot: React.FC = () => <GLShot setup={flagSetup} color />;
 
 // B. Title card over the flag: AMERICA / EST. 1776, then hold
 const TitleShot: React.FC = () => {
@@ -75,9 +82,9 @@ const TitleShot: React.FC = () => {
   const shine = -30 + ((f - 30) / 50) * 140;
   const est = ramp(f, 24, 40, easeOut);
   return (
-    <Camera keys={[{ f: 0, z: 1.0 }, { f: 108, z: 1.08, y: -10 }]} handheld={2} seed={102}>
-      <SunriseFlag wide t0={120} />
-      <Layer depth={0} html>
+    <AbsoluteFill>
+      <GLShot setup={titleSetup} color />
+      <AbsoluteFill>
         <AbsoluteFill style={{ background: "radial-gradient(ellipse 70% 55% at 50% 52%, rgba(6,10,28,0.72), rgba(6,10,28,0.25) 70%, rgba(6,10,28,0) 100%)" }} />
         <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", flexDirection: "column" }}>
           <div style={{ display: "flex", fontFamily: DISPLAY_FAMILY, fontWeight: 900, fontSize: 230, letterSpacing: 26, lineHeight: 1 }}>
@@ -112,11 +119,8 @@ const TitleShot: React.FC = () => {
             <div style={{ width: 220 * est, height: 3, background: "linear-gradient(90deg, #f7dc8a, rgba(247,220,138,0))" }} />
           </div>
         </AbsoluteFill>
-      </Layer>
-      <Layer depth={1.2}>
-        <Embers x={960} y={1120} w={1900} count={40} rise={2} seed="tembers" size={2.4} />
-      </Layer>
-    </Camera>
+      </AbsoluteFill>
+    </AbsoluteFill>
   );
 };
 

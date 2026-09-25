@@ -23,9 +23,9 @@ export const makeFlag = (g: GL, o: FlagOpts = {}) => {
   geo.translate(w / 2, -h / 2, 0); // hoist at x = 0, top at y = 0
   const mat = g.ink({
     color: "#ffffff",
-    mode: "v",
-    scale: 70,
-    scale2: 50,
+    mode: "screen",
+    angle: 75,
+    scale: 3.2,
     side: THREE.DoubleSide,
     shade: 0.75,
     cross: 0.5,
